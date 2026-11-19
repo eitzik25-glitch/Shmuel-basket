@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>הסל של משפחת שמואל</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+body {
+font-size: 1.15rem;
+background-color: #111827;
+color: #f3f4f6;
+font-family: system-ui, -apple-system, sans-serif;
+padding-bottom: 90px;
+}
+button, input, select {
+font-size: 1.1rem !important;
+}
+</style>
+</head>
+<body class="min-h-screen">
+<div id="login-modal" class="fixed inset-0 bg-black/85 flex items-center justify-center z-50 p-4">
+<div class="relative bg-gray-800 border border-gray-600 rounded-2xl p-6 w-full max-w-md shadow-2xl text-center">
+<button id="login-close" onclick="closeLogin()" class="hidden absolute top-3 left-3 text-2xl text-gray-400 hover:text-white px-2" title="סגור">✕</button>
+<h2 class="text-2xl font-bold text-green-400 mb-2">הסל של משפחת שמואל 🛒</h2>
+<p class="text-gray-300 mb-4">זיהוי מהיר לסנכרון בזמן אמת</p>
+<div class="text-right mb-2 font-semibold text-gray-200">1. מי נכנס עכשיו?</div>
+<div class="grid grid-cols-2 gap-2 mb-4" id="user-selection-grid">
+<button type="button" onclick="chooseLoginUser('איציק', this)" class="login-choice p-3 rounded-xl bg-gray-700 border border-gray-600 hover:bg-gray-600">איציק</button>
+<button type="button" onclick="chooseLoginUser('עינבל', this)" class="login-choice p-3 rounded-xl bg-gray-700 border border-gray-600 hover:bg-gray-600">עינבל</button>
+<button type="button" onclick="chooseLoginUser('נועה', this)" class="login-choice p-3 rounded-xl bg-gray-700 border border-gray-600 hover:bg-gray-600">נועה</button>
+<button type="button" onclick="chooseLoginUser('ליאור', this)" class="login-choice p-3 rounded-xl bg-gray-700 border border-gray-600 hover:bg-gray-600">ליאור</button>
+<button type="button" onclick="chooseLoginUser('הדר', this)" class="login-choice p-3 rounded-xl bg-gray-700 border border-gray-600 hover:bg-gray-600 col-span-2">הדר</button>
+</div>
+<div class="text-right mb-2 font-semibold text-gray-200">2. מספר טלפון נייד:</div>
+<input type="tel" id="login-phone" placeholder="050-0000000" class="w-full p-3 rounded-xl bg-gray-900 border border-gray-600 text-white text-center mb-5" dir="ltr">
+<button onclick="completeLogin()" class="w-full py-3.5 bg-green-600 hover:bg-green-500 text-white font-bold rounded-xl shadow-lg">
+כניסה לרשימה
+</button>
+</div>
+</div>
+<header class="bg-green-900/90 border-b border-green-700 p-4 sticky top-0 z-40 shadow-md">
+<div class="max-w-xl mx-auto flex justify-between items-center">
+<div>
+<h1 class="text-2xl font-bold text-white flex items-center gap-2">
+<span>🛒 הסל של שמואל</span>
+<span id="sync-dot" class="w-3 h-3 rounded-full bg-yellow-400 inline-block" title="מתחבר..."></span>
+</h1>
+<div class="text-sm text-green-200 mt-1">
+סל שבועי: <span id="total-price" class="font-bold text-white">0 ₪</span> | בעגלה: <span id="checked-count" class="font-bold text-white">0/0</span>
+</div>
+</div>
+<div class="flex flex-col items-end gap-1.5">
+<button onclick="openLoginModal()" class="bg-green-800 hover:bg-green-700 text-white px-3 py-1.5 rounded-lg border border-green-600 text-sm flex items-center gap-1">
+<span>👤</span>
+<span id="current-user-label">איציק</span>
+<span class="text-xs text-green-300">(החלף)</span>
+</button>
+<div class="flex gap-1.5">
+<button onclick="openLog()" class="relative bg-green-800 px-2.5 py-1 rounded-lg border border-green-600 text-sm" title="יומן התראות">🔔<span id="bell-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-500 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center">0</span></button>
+<button onclick="openInsights()" class="bg-green-800 px-2.5 py-1 rounded-lg border border-green-600 text-sm" title="ניתוח חכם">💡</button>
+<button onclick="refreshApp()" class="bg-green-800 px-2.5 py-1 rounded-lg border border-green-600 text-sm" title="רענון">🔄</button>
+<button onclick="logout()" class="bg-red-900/80 px-2.5 py-1 rounded-lg border border-red-700 text-sm">התנתק</button>
+</div>
+</div>
+</div>
+</header>
+<main class="max-w-xl mx-auto p-4">
+<div class="flex gap-2 mb-4">
+<button id="tab-weekly" onclick="switchTab('weekly')" class="flex-1 py-3 px-2 rounded-xl font-bold bg-green-700 text-white border border-green-500 text-center">
+לקנייה השבוע (<span id="weekly-badge">0</span>)
+</button>
+<button id="tab-master" onclick="switchTab('master')" class="flex-1 py-3 px-2 rounded-xl font-bold bg-gray-800 text-gray-300 border border-gray-700 text-center">
+רשימת מאסטר (<span id="master-badge">0</span>)
+</button>
+</div>
+<div class="bg-gray-800 p-4 rounded-xl border border-gray-700 mb-4">
+<div class="flex gap-2 mb-2">
+<input type="text" id="new-item-name" placeholder="שם מוצר להוספה (למשל: תחליב רחצה)..." class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white">
+<input type="number" id="new-item-price" placeholder="₪" class="w-20 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white text-center">
+</div>
+<div class="flex gap-2">
+<select id="new-item-category" class="flex-1 p-2.5 rounded-lg bg-gray-900 border border-gray-600 text-gray-200">
+<option value="ירקות ופירות">🥬 ירקות ופירות</option>
+<option value="יבשים, קמחים (ללא גלוטן) ושימורים">🌾 יבשים, קמחים (ללא גלוטן) ושימורים</option>
+<option value="מקרר, תחליפי חלב וגבינות">❄️ מקרר, תחליפי חלב וגבינות</option>
+<option value="ניקיון, פארם וטואלטיקה">🧴 ניקיון, פארם וטואלטיקה</option>
+</select>
+<button onclick="addNewItem()" class="bg-green-600 hover:bg-green-500 text-white font-bold px-5 py-2.5 rounded-lg">
++ הוסף
+</button>
+</div>
+</div>
+<div class="flex gap-1.5 overflow-x-auto pb-2 mb-3" id="filter-bar">
+<button onclick="setFilter('הכל')" class="filter-btn px-3 py-1.5 rounded-lg bg-green-700 text-white font-semibold whitespace-nowrap">הכל</button>
+<button onclick="setFilter('איציק')" class="filter-btn px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 whitespace-nowrap">איציק</button>
+<button onclick="setFilter('הדר')" class="filter-btn px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 whitespace-nowrap">הדר</button>
+<button onclick="setFilter('עינבל')" class="filter-btn px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 whitespace-nowrap">עינבל</button>
+<button onclick="setFilter('נועה')" class="filter-btn px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 whitespace-nowrap">נועה</button>
+<button onclick="setFilter('ליאור')" class="filter-btn px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 whitespace-nowrap">ליאור</button>
+</div>
+<input type="text" id="search-input" oninput="renderList()" placeholder="🔍 חיפוש מוצר ברשימה..." class="w-full p-3 rounded-xl bg-gray-800 border border-gray-700 text-white mb-4">
+<div id="items-container" class="space-y-4"></div>
+</main>
+<div class="fixed bottom-0 inset-x-0 bg-gray-900/95 border-t border-gray-700 p-3 z-40">
+<div class="max-w-xl mx-auto flex gap-3">
+<button onclick="resetChecked()" class="px-4 py-3 rounded-xl bg-gray-800 border border-gray-600 text-gray-200 font-semibold">
+↺ אפס סימונים
+</button>
+<button onclick="finishShopping()" class="flex-1 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg">
+🧾 סיום קנייה (ניקוי עגלה)
+</button>
+</div>
+</div>
+<div id="toast-area" class="fixed top-2 inset-x-0 z-[60] flex flex-col items-center gap-2 pointer-events-none px-3"></div>
+<div id="panel-modal" class="hidden fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4">
+<div class="bg-gray-800 border border-gray-600 rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col">
+<div class="flex justify-between items-center p-4 border-b border-gray-700">
+<h2 id="panel-title" class="text-xl font-bold text-green-400"></h2>
+<button onclick="closePanel()" class="text-2xl text-gray-300 px-2">✕</button>
+</div>
+<div id="panel-body" class="p-4 overflow-y-auto space-y-2"></div>
+</div>
+</div>
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
+import { getFirestore, doc, setDoc, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+const firebaseConfig = {
+apiKey: "AIzaSyC86BT7xHDxldY0_oKTow53vjWhYOwvFDM",
+authDomain: "shmuel-basket.firebaseapp.com",
+projectId: "shmuel-basket",
+storageBucket: "shmuel-basket.firebasestorage.app",
+messagingSenderId: "980041459452",
+appId: "1:980041459452:web:de69f92bd30ae069811979",
+measurementId: "G-7L68X12WK5"
+};
+const CATS = ["ירקות ופירות","יבשים, קמחים (ללא גלוטן) ושימורים","מקרר, תחליפי חלב וגבינות","ניקיון, פארם וטואלטיקה"];
+const defaultMasterItems = [
+["לבבות חסה באריזה",10,0,1,"איציק",""],
+["עגבניות 1 ק\"ג",8,0,1,"איציק",""],
+["מלפפונים 1 ק\"ג",8,0,1,"איציק",""],
+["בצל 1 ק\"ג",7,0,0,"איציק",""],
+["גזר ארוז",7,0,0,"איציק",""],
+["תפוח אדמה בשק",12,0,0,"איציק",""],
+["תפוח אדום 1 ק\"ג",12,0,0,"איציק",""],
+["תפוח ירוק 1 ק\"ג",14,0,0,"איציק",""],
+["כוסברה צרור",4,0,1,"איציק",""],
+["פטרוזיליה צרור",4,0,1,"איציק",""],
+["קמח שיבולת שועל מלאה אורגני ללא גלוטן",14,1,1,"איציק","עבור איציק • ללא גלוטן"],
+["אורז פרסי 1 ק\"ג",10,1,0,"איציק",""],
+["אורז מלא עגול אורגני 1 ק\"ג",14,1,0,"איציק",""],
+["טחינה גולמית",25,1,1,"איציק","עבור איציק"],
+["טחינה לבנה אחלה",15,1,0,"איציק","לשאר הבית"],
+["רסק עגבניות פרי ניר עגול מארז",12,1,0,"איציק",""],
+["יין תירוש מיץ ענבים",18,1,0,"איציק",""],
+["חלב סויה ללא סוכר",14,2,1,"איציק","עבור איציק • ללא חלב"],
+["ביצים מארז 30",35,2,0,"איציק",""],
+["חלב רגיל",7,2,0,"איציק","לשאר הבית"],
+["קוטג' תנובה / טרה",7,2,0,"איציק","לשאר הבית"],
+["גבינה צהובה 9%",25,2,0,"איציק","לשאר הבית"],
+["מעדני GO",20,2,0,"נועה","עבור נועה"],
+["משקה חלבון",10,2,0,"נועה","עבור נועה"],
+["סבון כלים נוזלי Spark",12,3,1,"איציק","יעד עד 12 ₪"],
+["אבקת כביסה אריאל 5-7 ק\"ג",55,3,0,"איציק",""],
+["מרכך כביסה מקסימה 4 ליטר",22,3,0,"איציק",""],
+["אקונומיקה סנו ז'אוול 4 ליטר",16,3,0,"איציק",""],
+["מטליות לחות לניקוי כללי סנו",12,3,0,"איציק",""],
+["מגבונים ללא בישום האגיס מארז",20,3,0,"איציק",""]
+].map((a, i) => ({ id: String(i + 1), name: a[0], price: a[1], category: CATS[a[2]], inWeekly: !!a[3], checked: false, qty: 1, requestedBy: a[4], note: a[5] }));
+window.appState = {
+items: JSON.parse(localStorage.getItem('shmuel_items_backup')) || defaultMasterItems,
+currentUser: localStorage.getItem('shmuel_user') || 'איציק',
+currentPhone: localStorage.getItem('shmuel_phone') || '',
+activeTab: 'weekly',
+activeFilter: 'הכל'
+};
+let db = null;
+let docRef = null;
+try {
+const app = initializeApp(firebaseConfig);
+db = getFirestore(app);
+docRef = doc(db, "family_lists", "shmuel_main_basket");
+onSnapshot(docRef, (snapshot) => {
+window.setSync('ok');
+if (!snapshot.exists()) {
+setDoc(docRef, { items: window.appState.items, events: [], updatedAt: new Date().toISOString(), updatedBy: window.appState.currentUser }).catch(e => console.error(e));
+return;
+}
+const data = snapshot.data();
+if (data && Array.isArray(data.items)) {
+window.appState.items = data.items;
+localStorage.setItem('shmuel_items_backup', JSON.stringify(data.items));
+window.renderList();
+}
+window.handleEvents((data && data.events) || []);
+}, (error) => {
+console.error("Firestore sync error:", error);
+window.setSync('err');
+window.showToast('⚠️ אין חיבור לענן – בדוק את firebaseConfig וכללי Firestore');
+});
+} catch (e) {
+console.error("Firebase init failed:", e);
+}
+window.setSync = function(state) {
+const d = document.getElementById('sync-dot'); if (!d) return;
+if (state === 'ok') { d.className = "w-3 h-3 rounded-full bg-green-400 inline-block shadow-[0_0_8px_#4ade80]"; d.title = "מחובר לענן בזמן אמת"; }
+else { d.className = "w-3 h-3 rounded-full bg-red-500 inline-block"; d.title = "שגיאת חיבור לענן - פועל מקומית"; }
+};
+window.showToast = function(text) {
+const area = document.getElementById('toast-area'); if (!area) return;
+const t = document.createElement('div');
+t.className = "pointer-events-auto bg-green-700 text-white px-4 py-3 rounded-xl shadow-2xl border border-green-400 max-w-sm text-center";
+t.textContent = text;
+area.appendChild(t);
+setTimeout(() => t.remove(), 6000);
+};
+window.updateBadge = function() {
+const s = window.appState, seen = Number(localStorage.getItem('shmuel_seen_log')) || 0;
+const n = (s.events || []).filter(e => e.ts > seen && e.by !== s.currentUser).length;
+const b = document.getElementById('bell-badge'); if (!b) return;
+b.textContent = n; b.classList.toggle('hidden', n === 0);
+};
+window.handleEvents = function(events) {
+const s = window.appState; s.events = events;
+const maxTs = events.reduce((m, e) => Math.max(m, e.ts || 0), 0);
+let last = Number(localStorage.getItem('shmuel_last_event')) || 0;
+if (!last) { last = maxTs || Date.now(); localStorage.setItem('shmuel_last_event', String(last)); }
+const fresh = events.filter(e => e.ts > last && e.by !== s.currentUser);
+fresh.slice(-3).forEach(e => window.showToast('🛒 ' + e.text));
+if (fresh.length && navigator.vibrate) navigator.vibrate(200);
+if (maxTs > last) localStorage.setItem('shmuel_last_event', String(maxTs));
+window.updateBadge();
+};
+window.mutate = async function(fn, ev) {
+const s = window.appState;
+fn(s.items);
+localStorage.setItem('shmuel_items_backup', JSON.stringify(s.items));
+window.renderList();
+const evt = ev ? { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), ts: Date.now(), by: s.currentUser, type: ev.type, text: ev.text } : null;
+if (!db) return;
+try {
+await runTransaction(db, async (tx) => {
+const snap = await tx.get(docRef);
+let items, events = [];
+if (snap.exists() && Array.isArray(snap.data().items)) {
+items = snap.data().items; fn(items); events = snap.data().events || [];
+} else { items = s.items; }
+if (evt) events = events.concat([evt]).slice(-40);
+tx.set(docRef, { items, events, updatedAt: new Date().toISOString(), updatedBy: s.currentUser });
+});
+} catch (err) {
+console.error("Error writing to Firestore:", err);
+window.setSync('err');
+window.showToast('⚠️ השינוי לא נשמר בענן');
+}
+};
+if (localStorage.getItem('shmuel_user')) {
+document.getElementById('login-modal').classList.add('hidden');
+document.getElementById('current-user-label').textContent = window.appState.currentUser;
+}
+window.renderList();
+</script>
+<script>
+let selectedTempUser = localStorage.getItem('shmuel_user') || 'איציק';
+function chooseLoginUser(name, btn) {
+selectedTempUser = name;
+document.querySelectorAll('.login-choice').forEach(b => {
+b.classList.remove('bg-green-700', 'border-green-400', 'font-bold');
+b.classList.add('bg-gray-700', 'border-gray-600');
+});
+btn.classList.remove('bg-gray-700', 'border-gray-600');
+btn.classList.add('bg-green-700', 'border-green-400', 'font-bold');
+}
+function openLoginModal() {
+document.getElementById('login-close').classList.toggle('hidden', !localStorage.getItem('shmuel_user'));
+document.getElementById('login-phone').value = localStorage.getItem('shmuel_phone') || '';
+document.getElementById('login-modal').classList.remove('hidden');
+}
+function completeLogin() {
+const phone = document.getElementById('login-phone').value.trim();
+window.appState.currentUser = selectedTempUser;
+window.appState.currentPhone = phone;
+localStorage.setItem('shmuel_user', selectedTempUser);
+localStorage.setItem('shmuel_phone', phone);
+document.getElementById('current-user-label').textContent = selectedTempUser;
+document.getElementById('login-modal').classList.add('hidden');
+if (window.updateBadge) window.updateBadge();
+}
+function switchTab(tab) {
+window.appState.activeTab = tab;
+const wBtn = document.getElementById('tab-weekly');
+const mBtn = document.getElementById('tab-master');
+if (tab === 'weekly') {
+wBtn.className = "flex-1 py-3 px-2 rounded-xl font-bold bg-green-700 text-white border border-green-500 text-center";
+mBtn.className = "flex-1 py-3 px-2 rounded-xl font-bold bg-gray-800 text-gray-300 border border-gray-700 text-center";
+} else {
+mBtn.className = "flex-1 py-3 px-2 rounded-xl font-bold bg-green-700 text-white border border-green-500 text-center";
+wBtn.className = "flex-1 py-3 px-2 rounded-xl font-bold bg-gray-800 text-gray-300 border border-gray-700 text-center";
+}
+window.renderList();
+}
+function setFilter(person) {
+window.appState.activeFilter = person;
+document.querySelectorAll('.filter-btn').forEach(btn => {
+if (btn.textContent.trim() === person) {
+btn.className = "filter-btn px-3 py-1.5 rounded-lg bg-green-700 text-white font-semibold whitespace-nowrap";
+} else {
+btn.className = "filter-btn px-3 py-1.5 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 whitespace-nowrap";
+}
+});
+window.renderList();
+}
+function logout() {
+['shmuel_user', 'shmuel_phone', 'shmuel_items_backup'].forEach(k => localStorage.removeItem(k));
+location.reload();
+}
+function refreshApp() { location.reload(); }
+function closeLogin() { if (localStorage.getItem('shmuel_user')) document.getElementById('login-modal').classList.add('hidden'); }
+function closePanel() { document.getElementById('panel-modal').classList.add('hidden'); }
+function openPanel(title, html) {
+document.getElementById('panel-title').textContent = title;
+document.getElementById('panel-body').innerHTML = html;
+document.getElementById('panel-modal').classList.remove('hidden');
+}
+function fmtTime(ts) { return new Date(ts).toLocaleString('he-IL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }); }
+function esc(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+function openLog() {
+const ev = (window.appState.events || []).slice().reverse();
+const html = ev.length ? ev.map(e => `<div class="bg-gray-900 rounded-lg p-3 border border-gray-700"><div>${esc(e.text)}</div><div class="text-xs text-gray-400 mt-1">${fmtTime(e.ts)}</div></div>`).join('') : '<div class="text-gray-400 text-center py-6">עדיין אין עדכונים</div>';
+openPanel('🔔 יומן עדכוני המשפחה', html);
+localStorage.setItem('shmuel_seen_log', String(Date.now()));
+window.updateBadge();
+}
+function openInsights() {
+const items = window.appState.items || [], w = items.filter(i => i.inWeekly);
+const sum = a => a.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0);
+const total = sum(w), budget = Number(localStorage.getItem('shmuel_budget')) || 1000;
+const pct = Math.round(total / budget * 100);
+const byP = {}; w.forEach(i => { const p = i.requestedBy || 'איציק'; byP[p] = (byP[p] || 0) + (i.price || 0) * (i.qty || 1); });
+const top = w.slice().sort((a, b) => (b.price * (b.qty || 1)) - (a.price * (a.qty || 1))).slice(0, 3);
+const card = (t) => `<div class="bg-gray-900 rounded-lg p-3 border border-gray-700">${t}</div>`;
+let html = card(`<b>סל שבועי:</b> ${total} ₪ מתוך ${budget} ₪ (${pct}%) ${total > budget ? '🔴 חריגה של ' + (total - budget) + ' ₪' : '🟢 בתוך התקציב'}<br><button onclick="setBudget()" class="mt-2 text-sm underline text-green-300">שנה תקציב</button>`);
+if (total > budget) html += card('<b>המלצה:</b> כדאי לדחות לשבוע הבא: ' + top.map(i => esc(i.name)).join(', '));
+html += card('<b>חלוקה לפי מבקש:</b><br>' + (Object.keys(byP).map(p => `${esc(p)}: ${byP[p]} ₪`).join('<br>') || 'אין נתונים'));
+html += card('<b>3 הפריטים היקרים:</b><br>' + (top.map(i => `${esc(i.name)} – ${i.price * (i.qty || 1)} ₪`).join('<br>') || 'אין נתונים'));
+html += '<div class="text-xs text-gray-400">* ניתוח מקומי בדפדפן.</div>';
+openPanel('💡 ניתוח חכם', html);
+}
+function setBudget() {
+const v = prompt('תקציב שבועי (₪):', localStorage.getItem('shmuel_budget') || '1000');
+if (v && Number(v) > 0) { localStorage.setItem('shmuel_budget', String(Number(v))); openInsights(); }
+}
+function addNewItem() {
+const nameInput = document.getElementById('new-item-name');
+const priceInput = document.getElementById('new-item-price');
+const catInput = document.getElementById('new-item-category');
+const name = nameInput.value.trim();
+if (!name) return;
+const user = window.appState.currentUser;
+const newItem = { id: Date.now().toString(), name, price: Number(priceInput.value) || 0, category: catInput.value, inWeekly: true, checked: false, qty: 1, requestedBy: user, phone: window.appState.currentPhone || "", note: "" };
+nameInput.value = ''; priceInput.value = '';
+window.mutate(items => { if (!items.some(i => i.id === newItem.id)) items.unshift(newItem); }, { type: 'add', text: `${user} הוסיף/ה: ${name}` });
+}
+function toggleCheck(id) {
+const it = window.appState.items.find(i => i.id === id); if (!it) return;
+const val = !it.checked;
+window.mutate(items => { const x = items.find(i => i.id === id); if (x) x.checked = val; });
+}
+function toggleWeekly(id) {
+const it = window.appState.items.find(i => i.id === id); if (!it) return;
+const on = !it.inWeekly, user = window.appState.currentUser;
+window.mutate(items => {
+const x = items.find(i => i.id === id); if (!x) return;
+x.inWeekly = on;
+if (on) { x.checked = false; x.requestedBy = user; }
+}, on ? { type: 'weekly', text: `${user} הוסיף/ה לסל השבועי: ${it.name}` } : null);
+}
+function changeQty(id, delta) {
+window.mutate(items => { const x = items.find(i => i.id === id); if (x) x.qty = Math.max(1, (x.qty || 1) + delta); });
+}
+function deleteItem(id) {
+const it = window.appState.items.find(i => i.id === id); if (!it) return;
+const user = window.appState.currentUser;
+window.mutate(items => { const k = items.findIndex(i => i.id === id); if (k > -1) items.splice(k, 1); }, { type: 'delete', text: `${user} מחק/ה: ${it.name}` });
+}
+function resetChecked() {
+window.mutate(items => items.forEach(i => i.checked = false), { type: 'reset', text: `${window.appState.currentUser} איפס/ה סימונים` });
+}
+function finishShopping() {
+const n = window.appState.items.filter(i => i.checked).length;
+if (!n) return;
+window.mutate(items => items.forEach(i => { if (i.checked) { i.inWeekly = false; i.checked = false; } }), { type: 'finish', text: `${window.appState.currentUser} סיים/ה קנייה (${n} מוצרים)` });
+}
+window.renderList = function() {
+const container = document.getElementById('items-container');
+const search = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+const items = window.appState.items || [];
+const weeklyItems = items.filter(i => i.inWeekly);
+document.getElementById('weekly-badge').textContent = weeklyItems.length;
+document.getElementById('master-badge').textContent = items.length;
+const total = weeklyItems.reduce((sum, i) => sum + ((i.price || 0) * (i.qty || 1)), 0);
+const checkedCount = weeklyItems.filter(i => i.checked).length;
+document.getElementById('total-price').textContent = total + ' ₪';
+document.getElementById('checked-count').textContent = `${checkedCount}/${weeklyItems.length}`;
+let filtered = window.appState.activeTab === 'weekly' ? weeklyItems : items;
+if (window.appState.activeFilter !== 'הכל') {
+filtered = filtered.filter(i => i.requestedBy === window.appState.activeFilter);
+}
+if (search) {
+filtered = filtered.filter(i => i.name.toLowerCase().includes(search));
+}
+if (filtered.length === 0) {
+container.innerHTML = `<div class="text-center text-gray-400 py-8 bg-gray-800/50 rounded-xl border border-gray-700">אין מוצרים להצגה בסינון הנוכחי</div>`;
+return;
+}
+const categories = ["ירקות ופירות", "יבשים, קמחים (ללא גלוטן) ושימורים", "מקרר, תחליפי חלב וגבינות", "ניקיון, פארם וטואלטיקה"];
+let html = '';
+categories.forEach(cat => {
+const catItems = filtered.filter(i => i.category === cat);
+if (catItems.length === 0) return;
+const catSum = catItems.reduce((s, i) => s + ((i.price || 0) * (i.qty || 1)), 0);
+html += `
+<div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
+<div class="bg-gray-700/80 px-4 py-2.5 flex justify-between items-center font-bold text-green-300">
+<span>${cat} (${catItems.length})</span>
+<span>${catSum} ₪</span>
+</div>
+<div class="divide-y divide-gray-700">
+`;
+catItems.forEach(item => {
+const isWeeklyView = window.appState.activeTab === 'weekly';
+html += `
+<div class="p-3.5 flex items-center justify-between gap-2 ${item.checked && isWeeklyView ? 'opacity-50 bg-gray-900/40' : ''}">
+<div class="flex items-start gap-3 flex-1">
+${isWeeklyView ? `
+<input type="checkbox" ${item.checked ? 'checked' : ''} onchange="toggleCheck('${item.id}')" class="w-6 h-6 mt-1 accent-green-500 rounded cursor-pointer">
+` : `
+<button onclick="toggleWeekly('${item.id}')" class="px-2.5 py-1 rounded-lg text-sm font-bold ${item.inWeekly ? 'bg-green-700 text-white' : 'bg-gray-700 text-gray-300 border border-gray-500'}">
+${item.inWeekly ? '✓ בסל' : '+ לסל'}
+</button>
+`}
+<div>
+<div class="font-bold text-white ${item.checked && isWeeklyView ? 'line-through text-gray-400' : ''}">${item.name}</div>
+<div class="flex flex-wrap gap-1.5 mt-1 text-xs">
+<span class="bg-blue-900/60 text-blue-200 px-2 py-0.5 rounded border border-blue-700/50">ביקש/ה: ${item.requestedBy || 'איציק'}</span>
+${item.note ? `<span class="bg-amber-900/50 text-amber-200 px-2 py-0.5 rounded border border-amber-700/50">${item.note}</span>` : ''}
+</div>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex items-center bg-gray-900 rounded-lg border border-gray-600">
+<button onclick="changeQty('${item.id}', -1)" class="px-2.5 py-1 text-gray-300 font-bold">-</button>
+<span class="px-2 font-bold text-white">${item.qty || 1}</span>
+<button onclick="changeQty('${item.id}', 1)" class="px-2.5 py-1 text-gray-300 font-bold">+</button>
+</div>
+<span class="text-sm font-semibold text-gray-300 w-12 text-left">${(item.price || 0) * (item.qty || 1)} ₪</span>
+<button onclick="deleteItem('${item.id}')" class="text-red-400 hover:text-red-300 px-1.5 font-bold" title="מחק">✕</button>
+</div>
+</div>
+`;
+});
+html += `</div></div>`;
+});
+container.innerHTML = html;
+};
+</script>
+</body>
+</html>
