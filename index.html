@@ -58,7 +58,8 @@ font-size: 1.1rem !important;
 </button>
 <div class="flex gap-1.5">
 <button onclick="openLog()" class="relative bg-green-800 px-2.5 py-1 rounded-lg border border-green-600 text-sm" title="יומן התראות">🔔<span id="bell-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-500 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center">0</span></button>
-<button onclick="openInsights()" class="bg-green-800 px-2.5 py-1 rounded-lg border border-green-600 text-sm" title="ניתוח חכם">💡</button>
+<button onclick="openBudget()" class="bg-green-800 px-2.5 py-1 rounded-lg border border-green-600 text-sm" title="תקציב">💰</button>
+<button onclick="openReceipt()" class="bg-green-800 px-2.5 py-1 rounded-lg border border-green-600 text-sm" title="סריקת חשבונית">🧾</button>
 <button onclick="refreshApp()" class="bg-green-800 px-2.5 py-1 rounded-lg border border-green-600 text-sm" title="רענון">🔄</button>
 <button onclick="logout()" class="bg-red-900/80 px-2.5 py-1 rounded-lg border border-red-700 text-sm">התנתק</button>
 </div>
@@ -172,7 +173,10 @@ items: JSON.parse(localStorage.getItem('shmuel_items_backup')) || defaultMasterI
 currentUser: localStorage.getItem('shmuel_user') || 'איציק',
 currentPhone: localStorage.getItem('shmuel_phone') || '',
 activeTab: 'weekly',
-activeFilter: 'הכל'
+activeFilter: 'הכל',
+budget: 1000,
+purchases: [],
+events: []
 };
 let db = null;
 let docRef = null;
@@ -183,10 +187,11 @@ docRef = doc(db, "family_lists", "shmuel_main_basket");
 onSnapshot(docRef, (snapshot) => {
 window.setSync('ok');
 if (!snapshot.exists()) {
-setDoc(docRef, { items: window.appState.items, events: [], updatedAt: new Date().toISOString(), updatedBy: window.appState.currentUser }).catch(e => console.error(e));
+setDoc(docRef, { items: window.appState.items, budget: window.appState.budget, purchases: [], events: [], updatedAt: new Date().toISOString(), updatedBy: window.appState.currentUser }).catch(e => console.error(e));
 return;
 }
 const data = snapshot.data();
+if (data) { if (data.budget) window.appState.budget = data.budget; window.appState.purchases = data.purchases || []; }
 if (data && Array.isArray(data.items)) {
 window.appState.items = data.items;
 localStorage.setItem('shmuel_items_backup', JSON.stringify(data.items));
@@ -206,13 +211,13 @@ const d = document.getElementById('sync-dot'); if (!d) return;
 if (state === 'ok') { d.className = "w-3 h-3 rounded-full bg-green-400 inline-block shadow-[0_0_8px_#4ade80]"; d.title = "מחובר לענן בזמן אמת"; }
 else { d.className = "w-3 h-3 rounded-full bg-red-500 inline-block"; d.title = "שגיאת חיבור לענן - פועל מקומית"; }
 };
-window.showToast = function(text) {
+window.showToast = function(text, warn) {
 const area = document.getElementById('toast-area'); if (!area) return;
 const t = document.createElement('div');
-t.className = "pointer-events-auto bg-green-700 text-white px-4 py-3 rounded-xl shadow-2xl border border-green-400 max-w-sm text-center";
+t.className = "pointer-events-auto text-white px-4 py-3 rounded-xl shadow-2xl border max-w-sm text-center " + (warn ? "bg-red-700 border-red-400" : "bg-green-700 border-green-400");
 t.textContent = text;
 area.appendChild(t);
-setTimeout(() => t.remove(), 6000);
+setTimeout(() => t.remove(), 7000);
 };
 window.updateBadge = function() {
 const s = window.appState, seen = Number(localStorage.getItem('shmuel_seen_log')) || 0;
@@ -225,28 +230,46 @@ const s = window.appState; s.events = events;
 const maxTs = events.reduce((m, e) => Math.max(m, e.ts || 0), 0);
 let last = Number(localStorage.getItem('shmuel_last_event')) || 0;
 if (!last) { last = maxTs || Date.now(); localStorage.setItem('shmuel_last_event', String(last)); }
-const fresh = events.filter(e => e.ts > last && e.by !== s.currentUser);
-fresh.slice(-3).forEach(e => window.showToast('🛒 ' + e.text));
+const fresh = events.filter(e => e.ts > last && (e.by !== s.currentUser || e.type === 'budget'));
+fresh.slice(-3).forEach(e => window.showToast((e.type === 'budget' ? '' : '🛒 ') + e.text, e.type === 'budget'));
 if (fresh.length && navigator.vibrate) navigator.vibrate(200);
 if (maxTs > last) localStorage.setItem('shmuel_last_event', String(maxTs));
 window.updateBadge();
 };
-window.mutate = async function(fn, ev) {
+window.weekStart = function() { const d = new Date(); d.setHours(0, 0, 0, 0); d.setDate(d.getDate() - d.getDay()); return d.getTime(); };
+window.metrics = function(d) {
+const basket = (d.items || []).filter(i => i.inWeekly).reduce((a, i) => a + (i.price || 0) * (i.qty || 1), 0);
+const ws = window.weekStart();
+const spent = (d.purchases || []).filter(p => p.ts >= ws).reduce((a, p) => a + (p.total || 0), 0);
+return { basket, spent };
+};
+window.mutateDoc = async function(fn, ev) {
 const s = window.appState;
-fn(s.items);
+const local = { items: s.items, budget: s.budget, purchases: s.purchases };
+fn(local);
+s.items = local.items; s.budget = local.budget; s.purchases = local.purchases;
 localStorage.setItem('shmuel_items_backup', JSON.stringify(s.items));
 window.renderList();
-const evt = ev ? { id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), ts: Date.now(), by: s.currentUser, type: ev.type, text: ev.text } : null;
+const mk = (type, text) => ({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), ts: Date.now(), by: s.currentUser, type, text });
 if (!db) return;
 try {
 await runTransaction(db, async (tx) => {
 const snap = await tx.get(docRef);
-let items, events = [];
-if (snap.exists() && Array.isArray(snap.data().items)) {
-items = snap.data().items; fn(items); events = snap.data().events || [];
-} else { items = s.items; }
-if (evt) events = events.concat([evt]).slice(-40);
-tx.set(docRef, { items, events, updatedAt: new Date().toISOString(), updatedBy: s.currentUser });
+const base = snap.exists() ? snap.data() : null;
+let d, events = [], news = [];
+if (base && Array.isArray(base.items)) {
+d = { items: base.items, budget: base.budget || 1000, purchases: base.purchases || [] };
+events = base.events || [];
+const m0 = window.metrics(d);
+fn(d);
+const m1 = window.metrics(d), b = d.budget;
+if (m0.basket <= b && m1.basket > b) news.push(mk('budget', `⚠️ חריגה מהתקציב: הסל השבועי ${m1.basket} ₪ מתוך ${b} ₪`));
+else if (m0.basket < b * 0.8 && m1.basket >= b * 0.8 && m1.basket <= b) news.push(mk('budget', `🟠 הסל הגיע ל-${Math.round(m1.basket / b * 100)}% מהתקציב (${m1.basket} ₪ מתוך ${b} ₪)`));
+if (m0.spent <= b && m1.spent > b) news.push(mk('budget', `🔴 ההוצאות בפועל השבוע (${m1.spent} ₪) חרגו מהתקציב (${b} ₪)`));
+} else { d = { items: s.items, budget: s.budget, purchases: s.purchases }; }
+if (ev) news.unshift(mk(ev.type, ev.text));
+events = events.concat(news).slice(-40);
+tx.set(docRef, { items: d.items, budget: d.budget, purchases: d.purchases, events, updatedAt: new Date().toISOString(), updatedBy: s.currentUser });
 });
 } catch (err) {
 console.error("Error writing to Firestore:", err);
@@ -254,6 +277,7 @@ window.setSync('err');
 window.showToast('⚠️ השינוי לא נשמר בענן');
 }
 };
+window.mutate = function(fn, ev) { return window.mutateDoc(d => fn(d.items), ev); };
 if (localStorage.getItem('shmuel_user')) {
 document.getElementById('login-modal').classList.add('hidden');
 document.getElementById('current-user-label').textContent = window.appState.currentUser;
@@ -331,24 +355,115 @@ openPanel('🔔 יומן עדכוני המשפחה', html);
 localStorage.setItem('shmuel_seen_log', String(Date.now()));
 window.updateBadge();
 }
-function openInsights() {
-const items = window.appState.items || [], w = items.filter(i => i.inWeekly);
-const sum = a => a.reduce((s, i) => s + (i.price || 0) * (i.qty || 1), 0);
-const total = sum(w), budget = Number(localStorage.getItem('shmuel_budget')) || 1000;
-const pct = Math.round(total / budget * 100);
+function openBudget() {
+const s = window.appState, b = s.budget || 1000;
+const m = window.metrics({ items: s.items, purchases: s.purchases });
+const w = (s.items || []).filter(i => i.inWeekly);
+const bar = (v, c) => `<div class="h-3 rounded bg-gray-700 overflow-hidden mt-1"><div class="h-3 ${v > b ? 'bg-red-500' : c}" style="width:${Math.min(100, Math.round(v / b * 100))}%"></div></div>`;
+const card = t => `<div class="bg-gray-900 rounded-lg p-3 border border-gray-700">${t}</div>`;
+const left = b - m.spent;
 const byP = {}; w.forEach(i => { const p = i.requestedBy || 'איציק'; byP[p] = (byP[p] || 0) + (i.price || 0) * (i.qty || 1); });
-const top = w.slice().sort((a, b) => (b.price * (b.qty || 1)) - (a.price * (a.qty || 1))).slice(0, 3);
-const card = (t) => `<div class="bg-gray-900 rounded-lg p-3 border border-gray-700">${t}</div>`;
-let html = card(`<b>סל שבועי:</b> ${total} ₪ מתוך ${budget} ₪ (${pct}%) ${total > budget ? '🔴 חריגה של ' + (total - budget) + ' ₪' : '🟢 בתוך התקציב'}<br><button onclick="setBudget()" class="mt-2 text-sm underline text-green-300">שנה תקציב</button>`);
-if (total > budget) html += card('<b>המלצה:</b> כדאי לדחות לשבוע הבא: ' + top.map(i => esc(i.name)).join(', '));
+const top = w.slice().sort((x, y) => (y.price * (y.qty || 1)) - (x.price * (x.qty || 1))).slice(0, 3);
+let html = card(`<b>תקציב שבועי:</b> ${b} ₪ <button onclick="setBudget()" class="mr-2 text-sm underline text-green-300">שנה</button>`);
+html += card(`<b>הסל המתוכנן:</b> ${m.basket} ₪ (${Math.round(m.basket / b * 100)}%)${bar(m.basket, 'bg-green-500')}`);
+html += card(`<b>הוצאות בפועל השבוע (חשבוניות):</b> ${m.spent} ₪ (${Math.round(m.spent / b * 100)}%)${bar(m.spent, 'bg-indigo-500')}<div class="text-sm mt-1 ${left < 0 ? 'text-red-300' : 'text-gray-300'}">${left >= 0 ? 'נשארו ' + left + ' ₪' : 'חריגה של ' + (-left) + ' ₪'}</div>`);
+if (m.basket > b) html += card('<b>המלצה:</b> הסל חורג מהתקציב. כדאי לדחות: ' + top.map(i => esc(i.name)).join(', '));
 html += card('<b>חלוקה לפי מבקש:</b><br>' + (Object.keys(byP).map(p => `${esc(p)}: ${byP[p]} ₪`).join('<br>') || 'אין נתונים'));
-html += card('<b>3 הפריטים היקרים:</b><br>' + (top.map(i => `${esc(i.name)} – ${i.price * (i.qty || 1)} ₪`).join('<br>') || 'אין נתונים'));
-html += '<div class="text-xs text-gray-400">* ניתוח מקומי בדפדפן.</div>';
-openPanel('💡 ניתוח חכם', html);
+const last = (s.purchases || []).slice(-5).reverse();
+html += card('<b>חשבוניות אחרונות:</b><br>' + (last.map(p => `${fmtTime(p.ts)} – ${esc(p.by)}: ${p.total} ₪`).join('<br>') || 'עדיין לא נסרקו חשבוניות'));
+html += '<button onclick="openReceipt()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold">🧾 סרוק חשבונית</button>';
+openPanel('💰 תקציב וניתוח', html);
 }
 function setBudget() {
-const v = prompt('תקציב שבועי (₪):', localStorage.getItem('shmuel_budget') || '1000');
-if (v && Number(v) > 0) { localStorage.setItem('shmuel_budget', String(Number(v))); openInsights(); }
+const v = Number(prompt('תקציב שבועי (₪):', window.appState.budget || 1000));
+if (v > 0) { window.mutateDoc(d => { d.budget = v; }, { type: 'budgetset', text: `${window.appState.currentUser} עדכן/ה תקציב שבועי ל-${v} ₪` }); openBudget(); }
+}
+function openReceipt() {
+openPanel('🧾 סריקת חשבונית', '<div class="text-sm text-gray-300">צלם את החשבונית או בחר תמונה. הזיהוי מתבצע בטלפון, והתמונה לא נשלחת לשום מקום.</div><input id="rcpt-file" type="file" accept="image/*" class="w-full text-sm" onchange="scanReceipt(this.files[0])"><div id="rcpt-status" class="text-sm text-amber-200"></div><div id="rcpt-result"></div><button onclick="showReceiptResult(\'\')" class="text-sm underline text-gray-400">או הזן סכום ידנית</button>');
+}
+function rcptStatus(t) { const e = document.getElementById('rcpt-status'); if (e) e.textContent = t; }
+function loadTess() {
+return new Promise((res, rej) => {
+if (window.Tesseract) return res();
+const sc = document.createElement('script');
+sc.src = 'https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js';
+sc.onload = res; sc.onerror = () => rej(new Error('load'));
+document.head.appendChild(sc);
+});
+}
+function prepImage(file) {
+return new Promise(res => {
+const img = new Image();
+img.onload = () => {
+const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+const c = document.createElement('canvas');
+c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+const x = c.getContext('2d');
+x.filter = 'grayscale(1) contrast(1.4)';
+x.drawImage(img, 0, 0, c.width, c.height);
+URL.revokeObjectURL(img.src);
+c.toBlob(b => res(b || file), 'image/png');
+};
+img.onerror = () => res(file);
+img.src = URL.createObjectURL(file);
+});
+}
+async function scanReceipt(file) {
+if (!file) return;
+try {
+rcptStatus('מכין תמונה...');
+const blob = await prepImage(file);
+rcptStatus('טוען מנוע זיהוי (בפעם הראשונה לוקח כדקה)...');
+await loadTess();
+const r = await Tesseract.recognize(blob, 'heb+eng', { logger: m => { if (m.status) rcptStatus('מזהה... ' + Math.round((m.progress || 0) * 100) + '%'); } });
+rcptStatus('');
+showReceiptResult(r.data.text || '');
+} catch (e) {
+console.error(e);
+rcptStatus('הזיהוי נכשל. אפשר להזין סכום ידנית.');
+showReceiptResult('');
+}
+}
+function parseReceipt(text) {
+const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
+const numRe = /(\d{1,4}[.,]\d{2})(?!\d)/g;
+const keys = /(סה"כ|סהכ|סה״כ|לתשלום|סך הכל|total)/i;
+const val = m => parseFloat(m[m.length - 1].replace(',', '.'));
+let total = null; const items = []; let max = 0;
+lines.forEach(l => {
+const m = l.match(numRe); if (!m) return;
+const v = val(m); if (v > max) max = v;
+if (keys.test(l)) { if (total === null || v > total) total = v; }
+else {
+const name = l.replace(numRe, '').replace(/[^\u0590-\u05FFa-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+if (name.length >= 2) items.push({ name, price: v });
+}
+});
+if (total === null && max > 0) total = max;
+return { total, items };
+}
+function showReceiptResult(text) {
+const box = document.getElementById('rcpt-result'); if (!box) return;
+const p = parseReceipt(text);
+const toks = x => (x.match(/[\u0590-\u05FFa-zA-Z]{3,}/g) || []);
+const basket = window.appState.items.filter(i => i.inWeekly && !i.checked);
+const matched = basket.filter(it => { const t = toks(it.name); return p.items.some(l => toks(l.name).some(w => t.some(x => x.includes(w) || w.includes(x)))); });
+let html = `<div class="mt-2"><label class="text-sm text-gray-300">סכום החשבונית (₪) – אפשר לתקן:</label><input id="rcpt-total" type="number" step="0.01" value="${p.total || ''}" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white mt-1"></div>`;
+if (matched.length) html += '<div class="mt-2 text-sm text-gray-300">פריטים מהסל שזוהו בחשבונית (סמן כנקנו):</div>' + matched.map(i => `<label class="flex items-center gap-2 mt-1"><input type="checkbox" class="rcpt-item w-5 h-5" value="${i.id}" checked> ${esc(i.name)}</label>`).join('');
+html += '<button onclick="saveReceipt()" class="w-full mt-3 py-3 rounded-xl bg-green-600 text-white font-bold">שמור חשבונית</button>';
+if (text) html += `<details class="mt-2 text-xs text-gray-400"><summary>הטקסט שזוהה</summary><pre class="whitespace-pre-wrap">${esc(text)}</pre></details>`;
+box.innerHTML = html;
+}
+function saveReceipt() {
+const total = Number(document.getElementById('rcpt-total').value);
+if (!(total > 0)) { window.showToast('הזן סכום תקין'); return; }
+const ids = [...document.querySelectorAll('.rcpt-item:checked')].map(c => c.value);
+const user = window.appState.currentUser, pid = Date.now().toString(), ts = Date.now();
+window.mutateDoc(d => {
+d.purchases = (d.purchases || []).concat([{ id: pid, ts, by: user, total }]).slice(-60);
+d.items.forEach(i => { if (ids.includes(i.id)) i.checked = true; });
+}, { type: 'purchase', text: `${user} סרק/ה חשבונית: ${total} ₪` });
+openBudget();
 }
 function addNewItem() {
 const nameInput = document.getElementById('new-item-name');
