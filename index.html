@@ -75,11 +75,9 @@ button,input,select{font-size:1rem !important}
 </div>
 <div class="flex gap-2">
 <select id="new-item-category" class="flex-1 p-2.5 rounded-lg bg-gray-900 border border-gray-600 text-gray-200">
-<option value="ירקות ופירות">🥬 ירקות ופירות</option>
-<option value="יבשים, קמחים (ללא גלוטן) ושימורים">🌾 יבשים, קמחים (ללא גלוטן) ושימורים</option>
-<option value="מקרר, תחליפי חלב וגבינות">❄️ מקרר, תחליפי חלב וגבינות</option>
-<option value="ניקיון, פארם וטואלטיקה">🧴 ניקיון, פארם וטואלטיקה</option>
+<option value="__auto">🤖 אוטומטי (לפי שם המוצר)</option>
 </select>
+<button onclick="openCats()" class="px-3 rounded-lg bg-gray-700 border border-gray-600" title="ניהול קטגוריות">⚙️</button>
 <button onclick="addNewItem()" class="bg-green-600 hover:bg-green-500 text-white font-bold px-5 py-2.5 rounded-lg">
 + הוסף
 </button>
@@ -165,6 +163,7 @@ currentPhone: localStorage.getItem('shmuel_phone') || '',
 activeTab: 'weekly',
 activeFilter: 'הכל',
 budget: 1000,
+categories: CATS.slice(),
 purchases: [],
 events: []
 };
@@ -177,11 +176,11 @@ docRef = doc(db, "family_lists", "shmuel_main_basket");
 onSnapshot(docRef, (snapshot) => {
 window.setSync('ok');
 if (!snapshot.exists()) {
-setDoc(docRef, { items: window.appState.items, budget: window.appState.budget, purchases: [], events: [], updatedAt: new Date().toISOString(), updatedBy: window.appState.currentUser }).catch(e => console.error(e));
+setDoc(docRef, { items: window.appState.items, budget: window.appState.budget, categories: window.appState.categories, purchases: [], events: [], updatedAt: new Date().toISOString(), updatedBy: window.appState.currentUser }).catch(e => console.error(e));
 return;
 }
 const data = snapshot.data();
-if (data) { if (data.budget) window.appState.budget = data.budget; window.appState.purchases = data.purchases || []; }
+if (data) { if (data.budget) window.appState.budget = data.budget; if (Array.isArray(data.categories)) window.appState.categories = data.categories; window.appState.purchases = data.purchases || []; }
 if (data && Array.isArray(data.items)) {
 window.appState.items = data.items;
 localStorage.setItem('shmuel_items_backup', JSON.stringify(data.items));
@@ -235,9 +234,9 @@ return { basket, spent };
 };
 window.mutateDoc = async function(fn, ev) {
 const s = window.appState;
-const local = { items: s.items, budget: s.budget, purchases: s.purchases };
+const local = { items: s.items, budget: s.budget, purchases: s.purchases, categories: s.categories };
 fn(local);
-s.items = local.items; s.budget = local.budget; s.purchases = local.purchases;
+s.items = local.items; s.budget = local.budget; s.purchases = local.purchases; s.categories = local.categories;
 localStorage.setItem('shmuel_items_backup', JSON.stringify(s.items));
 window.renderList();
 const mk = (type, text) => ({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), ts: Date.now(), by: s.currentUser, type, text });
@@ -248,7 +247,7 @@ const snap = await tx.get(docRef);
 const base = snap.exists() ? snap.data() : null;
 let d, events = [], news = [];
 if (base && Array.isArray(base.items)) {
-d = { items: base.items, budget: base.budget || 1000, purchases: base.purchases || [] };
+d = { items: base.items, budget: base.budget || 1000, purchases: base.purchases || [], categories: Array.isArray(base.categories) ? base.categories : s.categories.slice() };
 events = base.events || [];
 const m0 = window.metrics(d);
 fn(d);
@@ -256,10 +255,10 @@ const m1 = window.metrics(d), b = d.budget;
 if (m0.basket <= b && m1.basket > b) news.push(mk('budget', `⚠️ חריגה מהתקציב: הסל השבועי ${m1.basket} ₪ מתוך ${b} ₪`));
 else if (m0.basket < b * 0.8 && m1.basket >= b * 0.8 && m1.basket <= b) news.push(mk('budget', `🟠 הסל הגיע ל-${Math.round(m1.basket / b * 100)}% מהתקציב (${m1.basket} ₪ מתוך ${b} ₪)`));
 if (m0.spent <= b && m1.spent > b) news.push(mk('budget', `🔴 ההוצאות בפועל השבוע (${m1.spent} ₪) חרגו מהתקציב (${b} ₪)`));
-} else { d = { items: s.items, budget: s.budget, purchases: s.purchases }; }
+} else { d = { items: s.items, budget: s.budget, purchases: s.purchases, categories: s.categories }; }
 if (ev) news.unshift(mk(ev.type, ev.text));
 events = events.concat(news).slice(-40);
-tx.set(docRef, { items: d.items, budget: d.budget, purchases: d.purchases, events, updatedAt: new Date().toISOString(), updatedBy: s.currentUser });
+tx.set(docRef, { items: d.items, budget: d.budget, purchases: d.purchases, categories: d.categories, events, updatedAt: new Date().toISOString(), updatedBy: s.currentUser });
 });
 } catch (err) {
 console.error("Error writing to Firestore:", err);
@@ -456,6 +455,92 @@ d.items.forEach(i => { if (ids.includes(i.id)) i.checked = true; });
 }, { type: 'purchase', text: `${user} סרק/ה חשבונית: ${total} ₪` });
 openBudget();
 }
+const CAT_RULES = [
+['שימורים', ['שימורים'], ['טונה','סרדין','שימור','קופסת','קופסה','זיתים','חמוצים','כבוש','רסק','מרוסק','גרגירי חומוס','שעועית','ארטישוק','פולים']],
+['קפואים', ['קפוא'], ['קפוא','גלידה','שלגון','בצק עלים']],
+['משקאות', ['משקאות','שתיי'], ['מיץ','קולה','סודה','בירה','יין','תירוש','מים מינרל','משקה','פפסי','ספרייט','לימונדה','נביעות','מי עדן']],
+['מקרר וחלבי', ['מקרר','חלב','גבינ'], ['חלב','גבינ','קוטג','יוגורט','שמנת','חמאה','ביצים','ביצה','מעדן','לבן','אשל','טופו','משקה חלבון','מרגרינה','קשקבל','מוצרלה','פטה','לבנה','נקניק','פסטרמה']],
+['ניקיון ופארם', ['ניקיון','פארם','טואלטיקה'], ['סבון','כביסה','מרכך','אקונומיקה','מטלית','מגבון','שמפו','משחת שיניים','מברשת','נייר טואלט','נייר סופג','מגבת','דאודורנט','תחליב','קרם','טמפון','תחבושת','חיתול','שקיות','אשפה','סנו','ספוג','מנקה','מסיר','גילוח','כלים']],
+['בשר ודגים', ['בשר','עוף','דג'], ['עוף','בשר','שניצל','קבב','סלמון','דגים','פילה','המבורגר','סטייק','טחון','כבד','כנפיים','פרגית','נקניקיות','קציצות']],
+['לחם ומאפים', ['לחם','מאפ'], ['לחם','לחמני','פיתה','חלה','בגט','טורטיה','עוגה','בורקס','מאפה','קרואסון']],
+['יבשים ומזווה', ['יבשים','מזווה','קמחים'], ['קמח','אורז','פסטה','ספגטי','עדשים','קוסקוס','שיבולת','קורנפלקס','דגני','גרנולה','סוכר','מלח','תבלין','שמן','חומץ','טחינה','חומוס','ריבה','דבש','שוקולד','חטיף','ביסקוויט','עוגי','קפה','תה','אבקת אפייה','שקדים','אגוזים','בוטנים','קטניות','פתיתים','קטשופ','מיונז','חרדל','רוטב','אטריות','נודלס','פירורי','סולת','שמרים','פופקורן','צימוקים','תמרים']],
+['ירקות ופירות', ['ירקות','פירות'], ['עגבני','מלפפון','בצל','גזר','חסה','תפוח','בננ','תפוא','פטרוזיליה','כוסברה','פלפל','חציל','קישוא','לימון','תפוז','אבוקדו','ענבים','אבטיח','מלון','שום','ברוקולי','כרוב','כרובית','תירס','פירות','ירקות','תות','אפרסק','נקטרינ','שזיף','אגס','מנגו','קלמנטינ','פטריות','סלק','דלעת','בטטה','נענע','תרד','עלים','שמיר','בזיליקום','עירית','סלרי','צנון','גמבה']]
+];
+function autoCategory(name) {
+const n = name.toLowerCase().replace(/["״'׳]/g, '').replace(/[^\u0590-\u05FFa-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+const tokens = n.split(' ');
+const cats = getCats();
+for (const r of CAT_RULES) {
+const hit = r[2].some(k => k.indexOf(' ') > -1 ? n.includes(k) : tokens.some(t => t.startsWith(k)));
+if (!hit) continue;
+return cats.find(c => c === r[0]) || cats.find(c => r[1].some(w => c.includes(w))) || r[0];
+}
+return null;
+}
+function getCats() {
+const s = window.appState;
+const base = (s.categories || []).slice();
+(s.items || []).forEach(i => { if (i.category && !base.includes(i.category)) base.push(i.category); });
+return base;
+}
+function fillCatSelect() {
+const sel = document.getElementById('new-item-category'); if (!sel) return;
+const cur = sel.value || '__auto';
+sel.innerHTML = '<option value="__auto">🤖 אוטומטי (לפי שם המוצר)</option>' + getCats().map(c => `<option value="${esc(c).replace(/"/g, '&quot;')}">${esc(c)}</option>`).join('');
+sel.value = [...sel.options].some(o => o.value === cur) ? cur : '__auto';
+}
+function openCats() {
+const cats = getCats();
+let html = '<div class="text-xs text-gray-400">שינוי שם או מחיקה משפיעים על כולם. פריטים של קטגוריה שנמחקה עוברים ל"אחר".</div>';
+html += cats.map((c, i) => `<div class="flex items-center gap-2 bg-gray-900 rounded-lg p-2 border border-gray-700"><span class="flex-1">${esc(c)}</span><button onclick="renameCat(${i})" class="px-2" title="שנה שם">✏️</button><button onclick="deleteCat(${i})" class="px-2" title="מחק">🗑️</button></div>`).join('');
+html += '<div class="flex gap-2 mt-2"><input id="new-cat-name" placeholder="קטגוריה חדשה..." class="flex-1 p-2.5 rounded-lg bg-gray-900 border border-gray-600 text-white"><button onclick="addCat()" class="px-4 rounded-lg bg-green-600 text-white font-bold">+ הוסף</button></div>';
+openPanel('⚙️ ניהול קטגוריות', html);
+}
+function addCat() {
+const n = (document.getElementById('new-cat-name').value || '').trim();
+if (!n) return;
+if (getCats().includes(n)) { window.showToast('הקטגוריה כבר קיימת'); return; }
+window.mutateDoc(d => { d.categories = d.categories || []; if (!d.categories.includes(n)) d.categories.push(n); }, { type: 'cat', text: `${window.appState.currentUser} הוסיף/ה קטגוריה: ${n}` });
+openCats();
+}
+function renameCat(i) {
+const old = getCats()[i]; if (old === undefined) return;
+const nv = (prompt('שם חדש לקטגוריה:', old) || '').trim();
+if (!nv || nv === old) return;
+if (getCats().includes(nv)) { window.showToast('כבר קיימת קטגוריה בשם הזה'); return; }
+window.mutateDoc(d => {
+d.categories = (d.categories || []).map(c => c === old ? nv : c);
+if (!d.categories.includes(nv)) d.categories.push(nv);
+d.items.forEach(x => { if (x.category === old) x.category = nv; });
+}, { type: 'cat', text: `${window.appState.currentUser} שינה/תה שם קטגוריה: ${old} ← ${nv}` });
+openCats();
+}
+function deleteCat(i) {
+const old = getCats()[i]; if (old === undefined) return;
+if (old === 'אחר') { window.showToast('אי אפשר למחוק את הקטגוריה "אחר"'); return; }
+if (!confirm('למחוק את "' + old + '"? הפריטים שלה יעברו ל"אחר".')) return;
+window.mutateDoc(d => {
+d.categories = (d.categories || []).filter(c => c !== old);
+let moved = false;
+d.items.forEach(x => { if (x.category === old) { x.category = 'אחר'; moved = true; } });
+if (moved && !d.categories.includes('אחר')) d.categories.push('אחר');
+}, { type: 'cat', text: `${window.appState.currentUser} מחק/ה קטגוריה: ${old}` });
+openCats();
+}
+function openMove(id) {
+const it = window.appState.items.find(i => i.id === id); if (!it) return;
+const cats = getCats();
+openPanel('🏷️ העבר: ' + it.name, cats.map((c, i) => `<button onclick="moveItem('${id}', ${i})" class="w-full text-right p-3 rounded-lg border ${c === it.category ? 'bg-green-700 border-green-400' : 'bg-gray-900 border-gray-700'}">${esc(c)}</button>`).join(''));
+}
+function moveItem(id, i) {
+const c = getCats()[i]; if (c === undefined) return;
+window.mutateDoc(d => {
+const x = d.items.find(z => z.id === id); if (x) x.category = c;
+d.categories = d.categories || [];
+if (!d.categories.includes(c)) d.categories.push(c);
+});
+closePanel();
+}
 function addNewItem() {
 const nameInput = document.getElementById('new-item-name');
 const priceInput = document.getElementById('new-item-price');
@@ -463,9 +548,16 @@ const catInput = document.getElementById('new-item-category');
 const name = nameInput.value.trim();
 if (!name) return;
 const user = window.appState.currentUser;
-const newItem = { id: Date.now().toString(), name, price: Number(priceInput.value) || 0, category: catInput.value, inWeekly: true, checked: false, qty: 1, requestedBy: user, phone: window.appState.currentPhone || "", note: "" };
+let cat = catInput.value, auto = false;
+if (!cat || cat === '__auto') { cat = autoCategory(name) || 'אחר'; auto = true; }
+const newItem = { id: Date.now().toString(), name, price: Number(priceInput.value) || 0, category: cat, inWeekly: true, checked: false, qty: 1, requestedBy: user, phone: window.appState.currentPhone || "", note: "" };
 nameInput.value = ''; priceInput.value = '';
-window.mutate(items => { if (!items.some(i => i.id === newItem.id)) items.unshift(newItem); }, { type: 'add', text: `${user} הוסיף/ה: ${name}` });
+window.mutateDoc(d => {
+d.categories = d.categories || [];
+if (!d.categories.includes(cat)) d.categories.push(cat);
+if (!d.items.some(i => i.id === newItem.id)) d.items.unshift(newItem);
+}, { type: 'add', text: `${user} הוסיף/ה: ${name}` });
+if (auto) window.showToast('"' + name + '" נוסף לקטגוריה: ' + cat);
 }
 function toggleCheck(id) {
 const it = window.appState.items.find(i => i.id === id); if (!it) return;
@@ -498,6 +590,7 @@ if (!n) { window.showToast('סמן קודם פריטים בעגלה (✓) ואז
 window.mutate(items => items.forEach(i => { if (i.checked) { i.inWeekly = false; i.checked = false; } }), { type: 'finish', text: `${window.appState.currentUser} סיים/ה קנייה (${n} מוצרים)` });
 }
 window.renderList = function() {
+fillCatSelect();
 const container = document.getElementById('items-container');
 const search = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
 const items = window.appState.items || [];
@@ -519,7 +612,7 @@ if (filtered.length === 0) {
 container.innerHTML = `<div class="text-center text-gray-400 py-8 bg-gray-800/50 rounded-xl border border-gray-700">אין מוצרים להצגה בסינון הנוכחי</div>`;
 return;
 }
-const categories = ["ירקות ופירות", "יבשים, קמחים (ללא גלוטן) ושימורים", "מקרר, תחליפי חלב וגבינות", "ניקיון, פארם וטואלטיקה"];
+const categories = getCats();
 let html = '';
 categories.forEach(cat => {
 const catItems = filtered.filter(i => i.category === cat);
@@ -560,6 +653,7 @@ ${item.note ? `<span class="bg-amber-900/50 text-amber-200 px-2 py-0.5 rounded b
 <button onclick="changeQty('${item.id}', 1)" class="px-2.5 py-1 text-gray-300 font-bold">+</button>
 </div>
 <span class="text-sm font-semibold text-gray-300 w-12 text-left">${(item.price || 0) * (item.qty || 1)} ₪</span>
+<button onclick="openMove('${item.id}')" class="px-1" title="העבר לקטגוריה">🏷️</button>
 <button onclick="deleteItem('${item.id}')" class="text-red-400 hover:text-red-300 px-1.5 font-bold" title="מחק">✕</button>
 </div>
 </div>
@@ -571,3 +665,4 @@ container.innerHTML = html;
 };
 </script>
 </body>
+</html>
