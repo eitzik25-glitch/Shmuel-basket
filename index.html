@@ -53,6 +53,7 @@ button,input,select{font-size:1rem !important}
 <div class="flex gap-1.5">
 <button onclick="openLog()" class="flex-1 relative bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="יומן התראות">🔔<span id="bell-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-500 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center">0</span></button>
 <button onclick="openBudget()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="תקציב">💰</button>
+<button onclick="openCompare()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="השוואת חנויות">📊</button>
 <button onclick="openReceipt()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="סריקת חשבונית">🧾</button>
 <button onclick="refreshApp()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="רענון">🔄</button>
 <button onclick="logout()" class="flex-1 bg-red-900/80 py-1 rounded-lg border border-red-700 text-sm">התנתק</button>
@@ -71,7 +72,7 @@ button,input,select{font-size:1rem !important}
 <div class="bg-gray-800 p-3 rounded-xl border border-gray-700 mb-3">
 <div class="flex gap-2 mb-2">
 <input type="text" id="new-item-name" placeholder="שם מוצר להוספה (למשל: תחליב רחצה)..." class="flex-1 p-2.5 rounded-lg bg-gray-900 border border-gray-600 text-white">
-<input type="number" id="new-item-price" placeholder="₪" class="w-20 p-2.5 rounded-lg bg-gray-900 border border-gray-600 text-white text-center">
+<input type="number" id="new-item-price" placeholder="מחיר ₪" class="w-24 p-2.5 rounded-lg bg-gray-900 border border-gray-600 text-white text-center">
 </div>
 <div class="flex gap-2">
 <select id="new-item-category" class="flex-1 p-2.5 rounded-lg bg-gray-900 border border-gray-600 text-gray-200">
@@ -164,6 +165,8 @@ activeTab: 'weekly',
 activeFilter: 'הכל',
 budget: 1000,
 categories: CATS.slice(),
+stores: ['שופרסל','רמי לוי','יוחננוף','ויקטורי','מגה','שוק'],
+prices: [],
 purchases: [],
 events: []
 };
@@ -176,11 +179,11 @@ docRef = doc(db, "family_lists", "shmuel_main_basket");
 onSnapshot(docRef, (snapshot) => {
 window.setSync('ok');
 if (!snapshot.exists()) {
-setDoc(docRef, { items: window.appState.items, budget: window.appState.budget, categories: window.appState.categories, purchases: [], events: [], updatedAt: new Date().toISOString(), updatedBy: window.appState.currentUser }).catch(e => console.error(e));
+setDoc(docRef, { items: window.appState.items, budget: window.appState.budget, categories: window.appState.categories, stores: window.appState.stores, prices: [], purchases: [], events: [], updatedAt: new Date().toISOString(), updatedBy: window.appState.currentUser }).catch(e => console.error(e));
 return;
 }
 const data = snapshot.data();
-if (data) { if (data.budget) window.appState.budget = data.budget; if (Array.isArray(data.categories)) window.appState.categories = data.categories; window.appState.purchases = data.purchases || []; }
+if (data) { if (data.budget) window.appState.budget = data.budget; if (Array.isArray(data.categories)) window.appState.categories = data.categories; if (Array.isArray(data.stores)) window.appState.stores = data.stores; window.appState.prices = data.prices || []; window.appState.purchases = data.purchases || []; }
 if (data && Array.isArray(data.items)) {
 window.appState.items = data.items;
 localStorage.setItem('shmuel_items_backup', JSON.stringify(data.items));
@@ -234,9 +237,9 @@ return { basket, spent };
 };
 window.mutateDoc = async function(fn, ev) {
 const s = window.appState;
-const local = { items: s.items, budget: s.budget, purchases: s.purchases, categories: s.categories };
+const local = { items: s.items, budget: s.budget, purchases: s.purchases, categories: s.categories, stores: s.stores, prices: s.prices };
 fn(local);
-s.items = local.items; s.budget = local.budget; s.purchases = local.purchases; s.categories = local.categories;
+s.items = local.items; s.budget = local.budget; s.purchases = local.purchases; s.categories = local.categories; s.stores = local.stores; s.prices = local.prices;
 localStorage.setItem('shmuel_items_backup', JSON.stringify(s.items));
 window.renderList();
 const mk = (type, text) => ({ id: Date.now() + '-' + Math.random().toString(36).slice(2, 6), ts: Date.now(), by: s.currentUser, type, text });
@@ -247,7 +250,7 @@ const snap = await tx.get(docRef);
 const base = snap.exists() ? snap.data() : null;
 let d, events = [], news = [];
 if (base && Array.isArray(base.items)) {
-d = { items: base.items, budget: base.budget || 1000, purchases: base.purchases || [], categories: Array.isArray(base.categories) ? base.categories : s.categories.slice() };
+d = { items: base.items, budget: base.budget || 1000, purchases: base.purchases || [], categories: Array.isArray(base.categories) ? base.categories : s.categories.slice(), stores: Array.isArray(base.stores) ? base.stores : s.stores.slice(), prices: Array.isArray(base.prices) ? base.prices : s.prices.slice() };
 events = base.events || [];
 const m0 = window.metrics(d);
 fn(d);
@@ -255,10 +258,10 @@ const m1 = window.metrics(d), b = d.budget;
 if (m0.basket <= b && m1.basket > b) news.push(mk('budget', `⚠️ חריגה מהתקציב: הסל השבועי ${m1.basket} ₪ מתוך ${b} ₪`));
 else if (m0.basket < b * 0.8 && m1.basket >= b * 0.8 && m1.basket <= b) news.push(mk('budget', `🟠 הסל הגיע ל-${Math.round(m1.basket / b * 100)}% מהתקציב (${m1.basket} ₪ מתוך ${b} ₪)`));
 if (m0.spent <= b && m1.spent > b) news.push(mk('budget', `🔴 ההוצאות בפועל השבוע (${m1.spent} ₪) חרגו מהתקציב (${b} ₪)`));
-} else { d = { items: s.items, budget: s.budget, purchases: s.purchases, categories: s.categories }; }
+} else { d = { items: s.items, budget: s.budget, purchases: s.purchases, categories: s.categories, stores: s.stores, prices: s.prices }; }
 if (ev) news.unshift(mk(ev.type, ev.text));
 events = events.concat(news).slice(-40);
-tx.set(docRef, { items: d.items, budget: d.budget, purchases: d.purchases, categories: d.categories, events, updatedAt: new Date().toISOString(), updatedBy: s.currentUser });
+tx.set(docRef, { items: d.items, budget: d.budget, purchases: d.purchases, categories: d.categories, stores: d.stores, prices: d.prices, events, updatedAt: new Date().toISOString(), updatedBy: s.currentUser });
 });
 } catch (err) {
 console.error("Error writing to Firestore:", err);
@@ -359,7 +362,8 @@ html += card(`<b>הוצאות בפועל השבוע (חשבוניות):</b> ${m.
 if (m.basket > b) html += card('<b>המלצה:</b> הסל חורג מהתקציב. כדאי לדחות: ' + top.map(i => esc(i.name)).join(', '));
 html += card('<b>חלוקה לפי מבקש:</b><br>' + (Object.keys(byP).map(p => `${esc(p)}: ${byP[p]} ₪`).join('<br>') || 'אין נתונים'));
 const last = (s.purchases || []).slice(-5).reverse();
-html += card('<b>חשבוניות אחרונות:</b><br>' + (last.map(p => `${fmtTime(p.ts)} – ${esc(p.by)}: ${p.total} ₪`).join('<br>') || 'עדיין לא נסרקו חשבוניות'));
+html += card('<b>חשבוניות אחרונות:</b><br>' + (last.map(p => `${fmtTime(p.ts)} – ${p.store ? esc(p.store) + ' – ' : ''}${esc(p.by)}: ${p.total} ₪`).join('<br>') || 'עדיין לא נסרקו חשבוניות'));
+html += '<button onclick="openCompare()" class="w-full py-3 rounded-xl bg-gray-700 border border-gray-600 text-white font-bold">📊 השוואת חנויות</button>';
 html += '<button onclick="openReceipt()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold">🧾 סרוק חשבונית</button>';
 openPanel('💰 תקציב וניתוח', html);
 }
@@ -432,14 +436,28 @@ if (name.length >= 2) items.push({ name, price: v });
 if (total === null && max > 0) total = max;
 return { total, items };
 }
+function priceKey(n) { return (n || '').trim().toLowerCase(); }
+function storeOptions(cur, emptyLabel) {
+return '<option value="">' + emptyLabel + '</option>' + (window.appState.stores || []).map(st => `<option value="${esc(st).replace(/"/g, '&quot;')}" ${st === cur ? 'selected' : ''}>${esc(st)}</option>`).join('');
+}
+function addStore(selId) {
+const n = (prompt('שם החנות / הסופר:') || '').trim();
+if (!n) return;
+window.mutateDoc(d => { d.stores = d.stores || []; if (!d.stores.includes(n)) d.stores.push(n); });
+localStorage.setItem('shmuel_store', n);
+const sel = document.getElementById(selId);
+if (sel) sel.innerHTML = storeOptions(n, sel.getAttribute('data-empty') || '');
+}
 function showReceiptResult(text) {
 const box = document.getElementById('rcpt-result'); if (!box) return;
 const p = parseReceipt(text);
 const toks = x => (x.match(/[\u0590-\u05FFa-zA-Z]{3,}/g) || []);
 const basket = window.appState.items.filter(i => i.inWeekly && !i.checked);
-const matched = basket.filter(it => { const t = toks(it.name); return p.items.some(l => toks(l.name).some(w => t.some(x => x.includes(w) || w.includes(x)))); });
-let html = `<div class="mt-2"><label class="text-sm text-gray-300">סכום החשבונית (₪) – אפשר לתקן:</label><input id="rcpt-total" type="number" step="0.01" value="${p.total || ''}" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white mt-1"></div>`;
-if (matched.length) html += '<div class="mt-2 text-sm text-gray-300">פריטים מהסל שזוהו בחשבונית (סמן כנקנו):</div>' + matched.map(i => `<label class="flex items-center gap-2 mt-1"><input type="checkbox" class="rcpt-item w-5 h-5" value="${i.id}" checked> ${esc(i.name)}</label>`).join('');
+const matched = basket.map(it => { const t = toks(it.name); const line = p.items.find(l => toks(l.name).some(w => t.some(x => x.includes(w) || w.includes(x)))); return line ? { it, line } : null; }).filter(Boolean);
+const cur = localStorage.getItem('shmuel_store') || '';
+let html = `<div class="mt-2 text-sm text-gray-300">באיזו חנות קנית?</div><div class="flex gap-2 mt-1"><select id="rcpt-store" data-empty="בחר חנות..." onchange="localStorage.setItem('shmuel_store', this.value)" class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white">${storeOptions(cur, 'בחר חנות...')}</select><button onclick="addStore('rcpt-store')" class="px-4 rounded-lg bg-gray-700 border border-gray-600" title="חנות חדשה">➕</button></div>`;
+html += `<div class="mt-2"><label class="text-sm text-gray-300">סכום החשבונית (₪) – אפשר לתקן:</label><input id="rcpt-total" type="number" step="0.01" value="${p.total || ''}" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white mt-1"></div>`;
+if (matched.length) html += '<div class="mt-2 text-sm text-gray-300">פריטים מהסל שזוהו (יסומנו כנקנו, והמחיר ישמר להשוואה):</div>' + matched.map(m => `<label class="flex items-center gap-2 mt-1"><input type="checkbox" class="rcpt-item w-5 h-5" value="${m.it.id}" data-price="${m.line.price}" checked> ${esc(m.it.name)} – ${m.line.price} ₪</label>`).join('');
 html += '<button onclick="saveReceipt()" class="w-full mt-3 py-3 rounded-xl bg-green-600 text-white font-bold">שמור חשבונית</button>';
 if (text) html += `<details class="mt-2 text-xs text-gray-400"><summary>הטקסט שזוהה</summary><pre class="whitespace-pre-wrap">${esc(text)}</pre></details>`;
 box.innerHTML = html;
@@ -447,13 +465,74 @@ box.innerHTML = html;
 function saveReceipt() {
 const total = Number(document.getElementById('rcpt-total').value);
 if (!(total > 0)) { window.showToast('הזן סכום תקין'); return; }
-const ids = [...document.querySelectorAll('.rcpt-item:checked')].map(c => c.value);
+const store = (document.getElementById('rcpt-store').value || '').trim();
+if (!store) { window.showToast('בחר חנות (או הוסף ➕) לפני השמירה'); return; }
+const chosen = [...document.querySelectorAll('.rcpt-item:checked')].map(c => ({ id: c.value, price: Number(c.getAttribute('data-price')) || 0 }));
 const user = window.appState.currentUser, pid = Date.now().toString(), ts = Date.now();
 window.mutateDoc(d => {
-d.purchases = (d.purchases || []).concat([{ id: pid, ts, by: user, total }]).slice(-60);
-d.items.forEach(i => { if (ids.includes(i.id)) i.checked = true; });
-}, { type: 'purchase', text: `${user} סרק/ה חשבונית: ${total} ₪` });
+d.purchases = (d.purchases || []).concat([{ id: pid, ts, by: user, total, store }]).slice(-60);
+d.stores = d.stores || []; if (!d.stores.includes(store)) d.stores.push(store);
+d.prices = d.prices || [];
+d.items.forEach(i => {
+const c = chosen.find(x => x.id === i.id); if (!c) return;
+i.checked = true;
+if (c.price > 0) { const unit = Math.round(c.price / (i.qty || 1) * 100) / 100; i.price = unit; d.prices.push({ item: priceKey(i.name), store, price: unit, ts }); }
+});
+d.prices = d.prices.slice(-400);
+}, { type: 'purchase', text: `${user} סרק/ה חשבונית ב${store}: ${total} ₪` });
 openBudget();
+}
+function openPrice(id) {
+const it = window.appState.items.find(i => i.id === id); if (!it) return;
+const latest = {};
+(window.appState.prices || []).filter(o => o.item === priceKey(it.name)).sort((a, b) => a.ts - b.ts).forEach(o => { latest[o.store] = o.price; });
+const known = Object.keys(latest).map(st => `${esc(st)}: ${latest[st]} ₪`).join('<br>');
+openPanel('💲 מחיר: ' + it.name, `<div class="text-sm text-gray-300">מחיר ליחידה (₪):</div><input id="pp-price" type="number" step="0.01" value="${it.price || ''}" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white"><div class="text-sm text-gray-300 mt-2">חנות (אופציונלי, כדי להשוות מחירים):</div><div class="flex gap-2"><select id="pp-store" data-empty="ללא חנות" class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white">${storeOptions(localStorage.getItem('shmuel_store') || '', 'ללא חנות')}</select><button onclick="addStore('pp-store')" class="px-4 rounded-lg bg-gray-700 border border-gray-600">➕</button></div>${known ? '<div class="text-xs text-gray-400 mt-2">מחירים ידועים:<br>' + known + '</div>' : ''}<button onclick="savePrice('${id}')" class="w-full mt-3 py-3 rounded-xl bg-green-600 text-white font-bold">שמור מחיר</button>`);
+}
+function savePrice(id) {
+const v = Number(document.getElementById('pp-price').value);
+if (!(v > 0)) { window.showToast('הזן מחיר תקין'); return; }
+const store = (document.getElementById('pp-store').value || '').trim();
+if (store) localStorage.setItem('shmuel_store', store);
+const ts = Date.now();
+window.mutateDoc(d => {
+const x = d.items.find(i => i.id === id); if (!x) return;
+x.price = v;
+if (store) {
+d.stores = d.stores || []; if (!d.stores.includes(store)) d.stores.push(store);
+d.prices = (d.prices || []).concat([{ item: priceKey(x.name), store, price: v, ts }]).slice(-400);
+}
+});
+closePanel();
+}
+function openCompare() {
+const s = window.appState, P = s.purchases || [], obs = s.prices || [];
+const card = t => `<div class="bg-gray-900 rounded-lg p-3 border border-gray-700">${t}</div>`;
+const by = {};
+P.forEach(p => { const k = p.store || 'ללא חנות'; const o = by[k] || (by[k] = { n: 0, sum: 0 }); o.n++; o.sum += p.total || 0; });
+const stRows = Object.keys(by).sort((a, b) => by[b].sum - by[a].sum).map(k => `${esc(k)}: קניות: ${by[k].n}, סה"כ ${Math.round(by[k].sum)} ₪, ממוצע ${Math.round(by[k].sum / by[k].n)} ₪`);
+let html = card('<b>🧾 קניות לפי חנות (מחשבוניות):</b><br>' + (stRows.join('<br>') || 'עדיין אין חשבוניות. סרוק חשבונית ובחר חנות.'));
+const latest = {};
+obs.slice().sort((a, b) => a.ts - b.ts).forEach(o => { (latest[o.item] = latest[o.item] || {})[o.store] = o.price; });
+const multi = Object.keys(latest).filter(k => Object.keys(latest[k]).length >= 2);
+if (!multi.length) {
+html += card('<b>⚖️ השוואת מחירים:</b><br>עדיין אין מוצרים עם מחיר ביותר מחנות אחת. כדי לקבל השוואה: סרוק חשבוניות מחנויות שונות, או לחץ על המחיר ליד מוצר ועדכן אותו עם שם החנות.');
+} else {
+const idx = {}, wins = {}; let save = 0;
+multi.forEach(k => {
+const e = latest[k], vals = Object.values(e), mn = Math.min(...vals);
+save += vals.reduce((a, b) => a + b, 0) / vals.length - mn;
+Object.keys(e).forEach(st => { (idx[st] = idx[st] || []).push(e[st] / mn); if (e[st] === mn) wins[st] = (wins[st] || 0) + 1; });
+});
+const rank = Object.keys(idx).map(st => ({ st, v: idx[st].reduce((a, b) => a + b, 0) / idx[st].length * 100, n: idx[st].length, w: wins[st] || 0 })).sort((a, b) => a.v - b.v);
+html += card('<b>🏆 דירוג חנויות (100% = הזול ביותר בכל המוצרים):</b><br>' + rank.map((r, i) => `${i === 0 ? '🥇 ' : ''}${esc(r.st)}: ${Math.round(r.v)}% (הזולה ב-${r.w} מתוך ${r.n} מוצרים)`).join('<br>'));
+const rows = multi.map(k => { const ent = Object.entries(latest[k]).sort((a, b) => a[1] - b[1]); const lo = ent[0], hi = ent[ent.length - 1]; return { k, lo, hi, d: hi[1] - lo[1] }; }).sort((a, b) => b.d - a.d).slice(0, 8);
+html += card('<b>💡 הפערים הגדולים:</b><br>' + rows.map(r => `${esc(r.k)}: ${esc(r.lo[0])} ${r.lo[1]} ₪ מול ${esc(r.hi[0])} ${r.hi[1]} ₪ (פער ${Math.round(r.d * 100) / 100} ₪)`).join('<br>'));
+html += card(`<b>📈 פוטנציאל חיסכון:</b> קניית כל מוצר בחנות הזולה שלו חוסכת כ-${Math.round(save * 100) / 100} ₪ לעומת המחיר הממוצע, בכל סבב של ${multi.length} המוצרים האלה.`);
+const best = rank[0];
+html += card(`<b>המלצה:</b> ${esc(best.st)} הכי משתלמת לפי הנתונים הנוכחיים${rank.length > 1 && rank[1].v - best.v < 3 ? ' (הפער מהשנייה קטן, כדאי לצבור עוד חשבוניות)' : ''}. הדירוג נשען על ${multi.length} מוצרים בלבד.`);
+}
+openPanel('📊 השוואת חנויות', html);
 }
 const CAT_RULES = [
 ['שימורים', ['שימורים'], ['טונה','סרדין','שימור','קופסת','קופסה','זיתים','חמוצים','כבוש','רסק','מרוסק','גרגירי חומוס','שעועית','ארטישוק','פולים']],
@@ -652,7 +731,7 @@ ${item.note ? `<span class="bg-amber-900/50 text-amber-200 px-2 py-0.5 rounded b
 <span class="px-2 font-bold text-white">${item.qty || 1}</span>
 <button onclick="changeQty('${item.id}', 1)" class="px-2.5 py-1 text-gray-300 font-bold">+</button>
 </div>
-<span class="text-sm font-semibold text-gray-300 w-12 text-left">${(item.price || 0) * (item.qty || 1)} ₪</span>
+<button onclick="openPrice('${item.id}')" class="text-sm font-semibold underline min-w-[3rem] text-left ${item.price ? 'text-green-300' : 'text-amber-300'}" title="עריכת מחיר">${item.price ? (item.price * (item.qty || 1)) + ' ₪' : '+ מחיר'}</button>
 <button onclick="openMove('${item.id}')" class="px-1" title="העבר לקטגוריה">🏷️</button>
 <button onclick="deleteItem('${item.id}')" class="text-red-400 hover:text-red-300 px-1.5 font-bold" title="מחק">✕</button>
 </div>
