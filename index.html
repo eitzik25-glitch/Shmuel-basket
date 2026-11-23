@@ -7,7 +7,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <style>
 html{font-size:14px}
-body{font-size:1rem;background-color:#111827;color:#f3f4f6;font-family:system-ui,-apple-system,sans-serif;padding-bottom:72px}
+body{font-size:1rem;background-color:#111827;color:#f3f4f6;font-family:system-ui,-apple-system,sans-serif;padding-bottom:112px}
 button,input,select{font-size:1rem !important}
 </style>
 </head>
@@ -96,10 +96,19 @@ button,input,select{font-size:1rem !important}
 <div id="items-container" class="space-y-3"></div>
 </main>
 <div class="fixed bottom-0 inset-x-0 bg-gray-900/95 border-t border-gray-700 p-2 z-40">
-<div class="max-w-xl mx-auto flex gap-2">
+<div class="max-w-xl mx-auto flex flex-col gap-1.5">
+<div class="flex items-center gap-2">
+<select id="pstore" onchange="setPriceStore(this.value)" class="flex-1 min-w-0 p-1.5 rounded-lg bg-gray-800 border border-gray-600 text-gray-200 text-sm"></select>
+<div class="text-left whitespace-nowrap">
+<div class="font-bold text-green-300">סה"כ: <span id="bar-total">0</span> ₪</div>
+<div id="bar-note" class="text-xs text-amber-300"></div>
+</div>
+</div>
+<div class="flex gap-2">
 <button onclick="resetChecked()" class="px-3 py-2.5 rounded-xl bg-gray-800 border border-gray-600 text-gray-200 font-semibold text-sm">↺ אפס</button>
 <button onclick="openReceipt()" class="flex-1 py-2.5 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold shadow-lg">🧾 סרוק חשבונית</button>
 <button onclick="finishShopping()" class="flex-1 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold shadow-lg">✓ סיום קנייה</button>
+</div>
 </div>
 </div>
 <div id="toast-area" class="fixed top-2 inset-x-0 z-[60] flex flex-col items-center gap-2 pointer-events-none px-3"></div>
@@ -372,7 +381,7 @@ const v = Number(prompt('תקציב שבועי (₪):', window.appState.budget |
 if (v > 0) { window.mutateDoc(d => { d.budget = v; }, { type: 'budgetset', text: `${window.appState.currentUser} עדכן/ה תקציב שבועי ל-${v} ₪` }); openBudget(); }
 }
 function openReceipt() {
-openPanel('🧾 סריקת חשבונית', '<label class="block w-full py-3 rounded-xl bg-indigo-600 text-white font-bold text-center cursor-pointer">📷 צלם / בחר תמונת חשבונית<input id="rcpt-file" type="file" accept="image/*" class="hidden" onchange="scanReceipt(this.files[0])"></label><div class="text-xs text-gray-400">הזיהוי מתבצע בטלפון והתמונה לא נשלחת לשום מקום. אפשר גם להזין סכום ידנית.</div><div id="rcpt-status" class="text-sm text-amber-200"></div><div id="rcpt-result"></div>');
+openPanel('🧾 סריקת חשבונית', '<div class="flex gap-2"><label class="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold text-center cursor-pointer">📷 צלם<input type="file" accept="image/*" capture="environment" class="hidden" onchange="scanReceipt(this.files[0])"></label><label class="flex-1 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white font-bold text-center cursor-pointer">🖼️ מהגלריה<input type="file" accept="image/*" class="hidden" onchange="scanReceipt(this.files[0])"></label></div><div class="text-xs text-gray-400">הזיהוי מתבצע בטלפון והתמונה לא נשלחת לשום מקום. המוצרים שיזוהו יתווספו לרשימה הכללית עם מחיר החנות.</div><div id="rcpt-status" class="text-sm text-amber-200"></div><div id="rcpt-result"></div>');
 showReceiptResult('');
 }
 function rcptStatus(t) { const e = document.getElementById('rcpt-status'); if (e) e.textContent = t; }
@@ -422,21 +431,51 @@ function parseReceipt(text) {
 const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 const numRe = /(\d{1,4}[.,]\d{2})(?!\d)/g;
 const keys = /(סה"כ|סהכ|סה״כ|לתשלום|סך הכל|total)/i;
+const junk = /(מע"?מ|סה"?כ|סהכ|לתשלום|מזומן|אשראי|עודף|כרטיס|חשבונית|טלפון|תאריך|קופה|קופאי|סניף|עוסק|נקודות|מועדון|הנחה|אסמכתא|ויזה|ישראכרט|מאסטרקארד|total|subtotal|tax|vat|cash|change)/i;
 const val = m => parseFloat(m[m.length - 1].replace(',', '.'));
 let total = null; const items = []; let max = 0;
 lines.forEach(l => {
 const m = l.match(numRe); if (!m) return;
 const v = val(m); if (v > max) max = v;
 if (keys.test(l)) { if (total === null || v > total) total = v; }
-else {
+else if (!junk.test(l)) {
 const name = l.replace(numRe, '').replace(/[^\u0590-\u05FFa-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-if (name.length >= 2) items.push({ name, price: v });
+if (name.length >= 2 && /[\u0590-\u05FFa-zA-Z]/.test(name)) items.push({ name, price: v });
 }
 });
 if (total === null && max > 0) total = max;
 return { total, items };
 }
 function priceKey(n) { return (n || '').trim().toLowerCase(); }
+let priceStore = localStorage.getItem('shmuel_pstore') || '';
+function attr(t) { return esc(t).replace(/"/g, '&quot;'); }
+function latestPrices() {
+const m = {};
+(window.appState.prices || []).slice().sort((a, b) => a.ts - b.ts).forEach(o => { (m[o.item] = m[o.item] || {})[o.store] = o.price; });
+return m;
+}
+function unitPrice(item, idx, store) {
+if (store === undefined) store = priceStore;
+if (store) { const e = (idx || latestPrices())[priceKey(item.name)]; if (e && e[store] != null) return e[store]; }
+return item.price || 0;
+}
+function setPriceStore(v) { priceStore = v; localStorage.setItem('shmuel_pstore', v); window.renderList(); }
+function fillPriceStoreSelect() {
+const sel = document.getElementById('pstore'); if (!sel) return;
+sel.innerHTML = '<option value="">מחיר: אחרון שנקנה</option>' + (window.appState.stores || []).map(st => `<option value="${attr(st)}" ${st === priceStore ? 'selected' : ''}>מחיר ב${esc(st)}</option>`).join('');
+}
+function matchItem(name) {
+const toks = x => (x.match(/[\u0590-\u05FFa-zA-Z]{3,}/g) || []);
+const a = toks(name); if (!a.length) return null;
+let best = null, bs = 0;
+window.appState.items.forEach(it => {
+const b = toks(it.name); if (!b.length) return;
+let sh = 0; a.forEach(w => { if (b.some(x => x === w || x.startsWith(w) || w.startsWith(x))) sh++; });
+const sc = sh / Math.max(a.length, b.length);
+if (sc > bs) { bs = sc; best = it; }
+});
+return bs >= 0.6 ? best : null;
+}
 function storeOptions(cur, emptyLabel) {
 return '<option value="">' + emptyLabel + '</option>' + (window.appState.stores || []).map(st => `<option value="${esc(st).replace(/"/g, '&quot;')}" ${st === cur ? 'selected' : ''}>${esc(st)}</option>`).join('');
 }
@@ -451,14 +490,14 @@ if (sel) sel.innerHTML = storeOptions(n, sel.getAttribute('data-empty') || '');
 function showReceiptResult(text) {
 const box = document.getElementById('rcpt-result'); if (!box) return;
 const p = parseReceipt(text);
-const toks = x => (x.match(/[\u0590-\u05FFa-zA-Z]{3,}/g) || []);
-const basket = window.appState.items.filter(i => i.inWeekly && !i.checked);
-const matched = basket.map(it => { const t = toks(it.name); const line = p.items.find(l => toks(l.name).some(w => t.some(x => x.includes(w) || w.includes(x)))); return line ? { it, line } : null; }).filter(Boolean);
 const cur = localStorage.getItem('shmuel_store') || '';
 let html = `<div class="mt-2 text-sm text-gray-300">באיזו חנות קנית?</div><div class="flex gap-2 mt-1"><select id="rcpt-store" data-empty="בחר חנות..." onchange="localStorage.setItem('shmuel_store', this.value)" class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white">${storeOptions(cur, 'בחר חנות...')}</select><button onclick="addStore('rcpt-store')" class="px-4 rounded-lg bg-gray-700 border border-gray-600" title="חנות חדשה">➕</button></div>`;
 html += `<div class="mt-2"><label class="text-sm text-gray-300">סכום החשבונית (₪) – אפשר לתקן:</label><input id="rcpt-total" type="number" step="0.01" value="${p.total || ''}" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white mt-1"></div>`;
-if (matched.length) html += '<div class="mt-2 text-sm text-gray-300">פריטים מהסל שזוהו (יסומנו כנקנו, והמחיר ישמר להשוואה):</div>' + matched.map(m => `<label class="flex items-center gap-2 mt-1"><input type="checkbox" class="rcpt-item w-5 h-5" value="${m.it.id}" data-price="${m.line.price}" checked> ${esc(m.it.name)} – ${m.line.price} ₪</label>`).join('');
-html += '<button onclick="saveReceipt()" class="w-full mt-3 py-3 rounded-xl bg-green-600 text-white font-bold">שמור חשבונית</button>';
+if (p.items.length) {
+html += '<div class="mt-2 text-sm text-gray-300">מוצרים שזוהו – תקן שם או מחיר, וסמן מה לשמור:</div>';
+html += p.items.map(l => { const m = matchItem(l.name); return `<div class="rl-row bg-gray-900 rounded-lg p-1.5 border border-gray-700 mt-1" data-match="${m ? m.id : ''}"><div class="flex items-center gap-1.5"><input type="checkbox" class="rl-on w-5 h-5" checked><input type="text" class="rl-name flex-1 min-w-0 p-1.5 rounded bg-gray-800 border border-gray-600 text-white text-sm" value="${attr(l.name)}"><input type="number" step="0.01" class="rl-price w-16 p-1.5 rounded bg-gray-800 border border-gray-600 text-white text-sm text-center" value="${l.price}"></div><div class="text-xs mt-0.5 ${m ? 'text-green-300' : 'text-amber-300'}">${m ? 'יעדכן מחיר של: ' + esc(m.name) : 'מוצר חדש – יתווסף לרשימה הכללית'}</div></div>`; }).join('');
+}
+html += '<button onclick="saveReceipt()" class="w-full mt-3 py-3 rounded-xl bg-green-600 text-white font-bold">שמור חשבונית והוסף לרשימה</button>';
 if (text) html += `<details class="mt-2 text-xs text-gray-400"><summary>הטקסט שזוהה</summary><pre class="whitespace-pre-wrap">${esc(text)}</pre></details>`;
 box.innerHTML = html;
 }
@@ -467,19 +506,31 @@ const total = Number(document.getElementById('rcpt-total').value);
 if (!(total > 0)) { window.showToast('הזן סכום תקין'); return; }
 const store = (document.getElementById('rcpt-store').value || '').trim();
 if (!store) { window.showToast('בחר חנות (או הוסף ➕) לפני השמירה'); return; }
-const chosen = [...document.querySelectorAll('.rcpt-item:checked')].map(c => ({ id: c.value, price: Number(c.getAttribute('data-price')) || 0 }));
+const rows = [...document.querySelectorAll('#rcpt-result .rl-row')].filter(r => r.querySelector('.rl-on').checked).map((r, i) => ({ i, name: r.querySelector('.rl-name').value.trim(), price: Number(r.querySelector('.rl-price').value) || 0, match: r.getAttribute('data-match') || '' })).filter(x => x.name && x.price > 0);
+rows.forEach(x => { if (!x.match) x.cat = autoCategory(x.name) || 'אחר'; });
 const user = window.appState.currentUser, pid = Date.now().toString(), ts = Date.now();
 window.mutateDoc(d => {
 d.purchases = (d.purchases || []).concat([{ id: pid, ts, by: user, total, store }]).slice(-60);
 d.stores = d.stores || []; if (!d.stores.includes(store)) d.stores.push(store);
-d.prices = d.prices || [];
-d.items.forEach(i => {
-const c = chosen.find(x => x.id === i.id); if (!c) return;
-i.checked = true;
-if (c.price > 0) { const unit = Math.round(c.price / (i.qty || 1) * 100) / 100; i.price = unit; d.prices.push({ item: priceKey(i.name), store, price: unit, ts }); }
+d.prices = d.prices || []; d.categories = d.categories || [];
+rows.forEach(x => {
+let it = x.match ? d.items.find(z => z.id === x.match) : null;
+if (!it) {
+const id = 'r' + ts + '_' + x.i;
+it = d.items.find(z => z.id === id);
+if (!it) {
+it = { id, name: x.name, price: x.price, category: x.cat || 'אחר', inWeekly: false, checked: false, qty: 1, requestedBy: user, phone: '', note: '' };
+d.items.push(it);
+if (!d.categories.includes(it.category)) d.categories.push(it.category);
+}
+}
+it.price = x.price;
+if (it.inWeekly) it.checked = true;
+d.prices.push({ item: priceKey(it.name), store, price: x.price, ts });
 });
-d.prices = d.prices.slice(-400);
-}, { type: 'purchase', text: `${user} סרק/ה חשבונית ב${store}: ${total} ₪` });
+d.prices = d.prices.slice(-1500);
+}, { type: 'purchase', text: `${user} סרק/ה חשבונית ב${store}: ${total} ₪ (${rows.length} מוצרים נשמרו)` });
+window.showToast('נשמרו ' + rows.length + ' מוצרים ברשימה הכללית עם מחירי ' + store);
 openBudget();
 }
 function openPrice(id) {
@@ -487,7 +538,7 @@ const it = window.appState.items.find(i => i.id === id); if (!it) return;
 const latest = {};
 (window.appState.prices || []).filter(o => o.item === priceKey(it.name)).sort((a, b) => a.ts - b.ts).forEach(o => { latest[o.store] = o.price; });
 const known = Object.keys(latest).map(st => `${esc(st)}: ${latest[st]} ₪`).join('<br>');
-openPanel('💲 מחיר: ' + it.name, `<div class="text-sm text-gray-300">מחיר ליחידה (₪):</div><input id="pp-price" type="number" step="0.01" value="${it.price || ''}" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white"><div class="text-sm text-gray-300 mt-2">חנות (אופציונלי, כדי להשוות מחירים):</div><div class="flex gap-2"><select id="pp-store" data-empty="ללא חנות" class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white">${storeOptions(localStorage.getItem('shmuel_store') || '', 'ללא חנות')}</select><button onclick="addStore('pp-store')" class="px-4 rounded-lg bg-gray-700 border border-gray-600">➕</button></div>${known ? '<div class="text-xs text-gray-400 mt-2">מחירים ידועים:<br>' + known + '</div>' : ''}<button onclick="savePrice('${id}')" class="w-full mt-3 py-3 rounded-xl bg-green-600 text-white font-bold">שמור מחיר</button>`);
+openPanel('💲 מחיר: ' + it.name, `<div class="text-sm text-gray-300">מחיר ליחידה (₪):</div><input id="pp-price" type="number" step="0.01" value="${unitPrice(it) || ''}" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white"><div class="text-sm text-gray-300 mt-2">חנות (אופציונלי, כדי להשוות מחירים):</div><div class="flex gap-2"><select id="pp-store" data-empty="ללא חנות" class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white">${storeOptions(priceStore || localStorage.getItem('shmuel_store') || '', 'ללא חנות')}</select><button onclick="addStore('pp-store')" class="px-4 rounded-lg bg-gray-700 border border-gray-600">➕</button></div>${known ? '<div class="text-xs text-gray-400 mt-2">מחירים ידועים:<br>' + known + '</div>' : ''}<button onclick="savePrice('${id}')" class="w-full mt-3 py-3 rounded-xl bg-green-600 text-white font-bold">שמור מחיר</button>`);
 }
 function savePrice(id) {
 const v = Number(document.getElementById('pp-price').value);
@@ -500,10 +551,21 @@ const x = d.items.find(i => i.id === id); if (!x) return;
 x.price = v;
 if (store) {
 d.stores = d.stores || []; if (!d.stores.includes(store)) d.stores.push(store);
-d.prices = (d.prices || []).concat([{ item: priceKey(x.name), store, price: v, ts }]).slice(-400);
+d.prices = (d.prices || []).concat([{ item: priceKey(x.name), store, price: v, ts }]).slice(-1500);
 }
 });
 closePanel();
+}
+function basketByStore() {
+const s = window.appState, idx = latestPrices(), w = (s.items || []).filter(i => i.inWeekly);
+if (!w.length) return '';
+const rows = (s.stores || []).filter(st => Object.keys(idx).some(k => idx[k][st] != null)).map(st => {
+let sum = 0, cov = 0;
+w.forEach(i => { const e = idx[priceKey(i.name)]; if (e && e[st] != null) { sum += e[st] * (i.qty || 1); cov++; } else sum += (i.price || 0) * (i.qty || 1); });
+return { st, sum: Math.round(sum * 100) / 100, cov };
+}).sort((a, b) => a.sum - b.sum);
+if (!rows.length) return '';
+return `<div class="bg-gray-900 rounded-lg p-3 border border-gray-700"><b>🛒 כמה תעלה הקנייה (הסל הנוכחי, ${w.length} פריטים):</b><br>` + rows.map((r, i) => `${i === 0 ? '🥇 ' : ''}${esc(r.st)}: ${r.sum} ₪ (מחיר בחנות ל-${r.cov} מתוך ${w.length})`).join('<br>') + '</div>';
 }
 function openCompare() {
 const s = window.appState, P = s.purchases || [], obs = s.prices || [];
@@ -511,7 +573,8 @@ const card = t => `<div class="bg-gray-900 rounded-lg p-3 border border-gray-700
 const by = {};
 P.forEach(p => { const k = p.store || 'ללא חנות'; const o = by[k] || (by[k] = { n: 0, sum: 0 }); o.n++; o.sum += p.total || 0; });
 const stRows = Object.keys(by).sort((a, b) => by[b].sum - by[a].sum).map(k => `${esc(k)}: קניות: ${by[k].n}, סה"כ ${Math.round(by[k].sum)} ₪, ממוצע ${Math.round(by[k].sum / by[k].n)} ₪`);
-let html = card('<b>🧾 קניות לפי חנות (מחשבוניות):</b><br>' + (stRows.join('<br>') || 'עדיין אין חשבוניות. סרוק חשבונית ובחר חנות.'));
+let html = basketByStore();
+html += card('<b>🧾 קניות לפי חנות (מחשבוניות):</b><br>' + (stRows.join('<br>') || 'עדיין אין חשבוניות. סרוק חשבונית ובחר חנות.'));
 const latest = {};
 obs.slice().sort((a, b) => a.ts - b.ts).forEach(o => { (latest[o.item] = latest[o.item] || {})[o.store] = o.price; });
 const multi = Object.keys(latest).filter(k => Object.keys(latest[k]).length >= 2);
@@ -635,6 +698,7 @@ window.mutateDoc(d => {
 d.categories = d.categories || [];
 if (!d.categories.includes(cat)) d.categories.push(cat);
 if (!d.items.some(i => i.id === newItem.id)) d.items.unshift(newItem);
+if (priceStore && newItem.price > 0) { d.prices = d.prices || []; d.prices.push({ item: priceKey(name), store: priceStore, price: newItem.price, ts: Date.now() }); }
 }, { type: 'add', text: `${user} הוסיף/ה: ${name}` });
 if (auto) window.showToast('"' + name + '" נוסף לקטגוריה: ' + cat);
 }
@@ -676,9 +740,14 @@ const items = window.appState.items || [];
 const weeklyItems = items.filter(i => i.inWeekly);
 document.getElementById('weekly-badge').textContent = weeklyItems.length;
 document.getElementById('master-badge').textContent = items.length;
-const total = weeklyItems.reduce((sum, i) => sum + ((i.price || 0) * (i.qty || 1)), 0);
+const idx = latestPrices();
+const total = weeklyItems.reduce((sum, i) => sum + (unitPrice(i, idx) * (i.qty || 1)), 0);
 const checkedCount = weeklyItems.filter(i => i.checked).length;
-document.getElementById('total-price').textContent = total + ' ₪';
+document.getElementById('total-price').textContent = Math.round(total * 100) / 100 + ' ₪';
+document.getElementById('bar-total').textContent = Math.round(total * 100) / 100;
+const miss = priceStore ? weeklyItems.filter(i => { const e = idx[priceKey(i.name)]; return !(e && e[priceStore] != null); }).length : 0;
+document.getElementById('bar-note').textContent = miss ? 'ל-' + miss + ' פריטים אין מחיר בחנות זו (לפי מחיר אחרון)' : '';
+fillPriceStoreSelect();
 document.getElementById('checked-count').textContent = `${checkedCount}/${weeklyItems.length}`;
 let filtered = window.appState.activeTab === 'weekly' ? weeklyItems : items;
 if (window.appState.activeFilter !== 'הכל') {
@@ -696,7 +765,7 @@ let html = '';
 categories.forEach(cat => {
 const catItems = filtered.filter(i => i.category === cat);
 if (catItems.length === 0) return;
-const catSum = catItems.reduce((s, i) => s + ((i.price || 0) * (i.qty || 1)), 0);
+const catSum = Math.round(catItems.reduce((s, i) => s + unitPrice(i, idx) * (i.qty || 1), 0) * 100) / 100;
 html += `
 <div class="bg-gray-800 rounded-xl border border-gray-700 overflow-hidden">
 <div class="bg-gray-700/80 px-3 py-2 flex justify-between items-center font-bold text-green-300">
@@ -707,6 +776,7 @@ html += `
 `;
 catItems.forEach(item => {
 const isWeeklyView = window.appState.activeTab === 'weekly';
+const up = unitPrice(item, idx), ee = idx[priceKey(item.name)], have = priceStore && ee && ee[priceStore] != null;
 html += `
 <div class="p-2.5 flex items-center justify-between gap-2 ${item.checked && isWeeklyView ? 'opacity-50 bg-gray-900/40' : ''}">
 <div class="flex items-start gap-3 flex-1">
@@ -731,7 +801,7 @@ ${item.note ? `<span class="bg-amber-900/50 text-amber-200 px-2 py-0.5 rounded b
 <span class="px-2 font-bold text-white">${item.qty || 1}</span>
 <button onclick="changeQty('${item.id}', 1)" class="px-2.5 py-1 text-gray-300 font-bold">+</button>
 </div>
-<button onclick="openPrice('${item.id}')" class="text-sm font-semibold underline min-w-[3rem] text-left ${item.price ? 'text-green-300' : 'text-amber-300'}" title="עריכת מחיר">${item.price ? (item.price * (item.qty || 1)) + ' ₪' : '+ מחיר'}</button>
+<button onclick="openPrice('${item.id}')" class="text-sm font-semibold underline min-w-[3rem] text-left ${up ? (priceStore && !have ? 'text-amber-300' : 'text-green-300') : 'text-amber-300'}" title="עריכת מחיר">${up ? Math.round(up * (item.qty || 1) * 100) / 100 + ' ₪' : '+ מחיר'}</button>
 <button onclick="openMove('${item.id}')" class="px-1" title="העבר לקטגוריה">🏷️</button>
 <button onclick="deleteItem('${item.id}')" class="text-red-400 hover:text-red-300 px-1.5 font-bold" title="מחק">✕</button>
 </div>
