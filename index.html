@@ -54,7 +54,7 @@ button,input,select{font-size:1rem !important}
 <button onclick="openLog()" class="flex-1 relative bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="יומן התראות">🔔<span id="bell-badge" class="hidden absolute -top-1.5 -left-1.5 bg-red-500 text-white text-xs rounded-full min-w-[18px] h-[18px] flex items-center justify-center">0</span></button>
 <button onclick="openBudget()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="תקציב">💰</button>
 <button onclick="openCompare()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="השוואת חנויות">📊</button>
-<button onclick="openReceipt()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="סריקת חשבונית">🧾</button>
+<button onclick="openReceipts()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="חשבוניות">🧾</button>
 <button onclick="refreshApp()" class="flex-1 bg-green-800 py-1 rounded-lg border border-green-600 text-sm" title="רענון">🔄</button>
 <button onclick="logout()" class="flex-1 bg-red-900/80 py-1 rounded-lg border border-red-700 text-sm">התנתק</button>
 </div>
@@ -111,6 +111,10 @@ button,input,select{font-size:1rem !important}
 </div>
 </div>
 </div>
+<div id="img-viewer" class="hidden fixed inset-0 bg-black z-[70] overflow-auto">
+<button onclick="document.getElementById('img-viewer').classList.add('hidden')" class="fixed top-2 left-2 z-[71] bg-gray-800 text-white text-2xl px-3 py-1 rounded-lg">✕</button>
+<img id="img-viewer-img" src="" alt="" style="width:230%;max-width:none">
+</div>
 <div id="toast-area" class="fixed top-2 inset-x-0 z-[60] flex flex-col items-center gap-2 pointer-events-none px-3"></div>
 <div id="panel-modal" class="hidden fixed inset-0 bg-black/85 z-50 flex items-center justify-center p-4">
 <div class="bg-gray-800 border border-gray-600 rounded-2xl w-full max-w-md max-h-[80vh] flex flex-col">
@@ -123,7 +127,7 @@ button,input,select{font-size:1rem !important}
 </div>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-import { getFirestore, doc, setDoc, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, deleteDoc, onSnapshot, runTransaction } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
 const firebaseConfig = {
 apiKey: "AIzaSyC86BT7xHDxldY0_oKTow53vjWhYOwvFDM",
 authDomain: "shmuel-basket.firebaseapp.com",
@@ -134,40 +138,8 @@ appId: "1:980041459452:web:de69f92bd30ae069811979",
 measurementId: "G-7L68X12WK5"
 };
 const CATS = ["ירקות ופירות","יבשים, קמחים (ללא גלוטן) ושימורים","מקרר, תחליפי חלב וגבינות","ניקיון, פארם וטואלטיקה"];
-const defaultMasterItems = [
-["לבבות חסה באריזה",10,0,1,"איציק",""],
-["עגבניות 1 ק\"ג",8,0,1,"איציק",""],
-["מלפפונים 1 ק\"ג",8,0,1,"איציק",""],
-["בצל 1 ק\"ג",7,0,0,"איציק",""],
-["גזר ארוז",7,0,0,"איציק",""],
-["תפוח אדמה בשק",12,0,0,"איציק",""],
-["תפוח אדום 1 ק\"ג",12,0,0,"איציק",""],
-["תפוח ירוק 1 ק\"ג",14,0,0,"איציק",""],
-["כוסברה צרור",4,0,1,"איציק",""],
-["פטרוזיליה צרור",4,0,1,"איציק",""],
-["קמח שיבולת שועל מלאה אורגני ללא גלוטן",14,1,1,"איציק","עבור איציק • ללא גלוטן"],
-["אורז פרסי 1 ק\"ג",10,1,0,"איציק",""],
-["אורז מלא עגול אורגני 1 ק\"ג",14,1,0,"איציק",""],
-["טחינה גולמית",25,1,1,"איציק","עבור איציק"],
-["טחינה לבנה אחלה",15,1,0,"איציק","לשאר הבית"],
-["רסק עגבניות פרי ניר עגול מארז",12,1,0,"איציק",""],
-["יין תירוש מיץ ענבים",18,1,0,"איציק",""],
-["חלב סויה ללא סוכר",14,2,1,"איציק","עבור איציק • ללא חלב"],
-["ביצים מארז 30",35,2,0,"איציק",""],
-["חלב רגיל",7,2,0,"איציק","לשאר הבית"],
-["קוטג' תנובה / טרה",7,2,0,"איציק","לשאר הבית"],
-["גבינה צהובה 9%",25,2,0,"איציק","לשאר הבית"],
-["מעדני GO",20,2,0,"נועה","עבור נועה"],
-["משקה חלבון",10,2,0,"נועה","עבור נועה"],
-["סבון כלים נוזלי Spark",12,3,1,"איציק","יעד עד 12 ₪"],
-["אבקת כביסה אריאל 5-7 ק\"ג",55,3,0,"איציק",""],
-["מרכך כביסה מקסימה 4 ליטר",22,3,0,"איציק",""],
-["אקונומיקה סנו ז'אוול 4 ליטר",16,3,0,"איציק",""],
-["מטליות לחות לניקוי כללי סנו",12,3,0,"איציק",""],
-["מגבונים ללא בישום האגיס מארז",20,3,0,"איציק",""]
-].map((a, i) => ({ id: String(i + 1), name: a[0], price: a[1], category: CATS[a[2]], inWeekly: !!a[3], checked: false, qty: 1, requestedBy: a[4], note: a[5] }));
 window.appState = {
-items: JSON.parse(localStorage.getItem('shmuel_items_backup')) || defaultMasterItems,
+items: JSON.parse(localStorage.getItem('shmuel_items_backup')) || [],
 currentUser: localStorage.getItem('shmuel_user') || 'איציק',
 currentPhone: localStorage.getItem('shmuel_phone') || '',
 activeTab: 'weekly',
@@ -279,6 +251,9 @@ window.showToast('⚠️ השינוי לא נשמר בענן');
 }
 };
 window.mutate = function(fn, ev) { return window.mutateDoc(d => fn(d.items), ev); };
+window.saveImg = async function(id, data) { if (!db) return false; await setDoc(doc(db, "family_lists", "img_" + id), { data, ts: Date.now() }); return true; };
+window.loadImg = async function(id) { if (!db) return null; const sn = await getDoc(doc(db, "family_lists", "img_" + id)); return sn.exists() ? sn.data().data : null; };
+window.delImg = async function(id) { if (!db) return; try { await deleteDoc(doc(db, "family_lists", "img_" + id)); } catch (e) { console.error(e); } };
 if (localStorage.getItem('shmuel_user')) {
 document.getElementById('login-modal').classList.add('hidden');
 document.getElementById('current-user-label').textContent = window.appState.currentUser;
@@ -372,6 +347,7 @@ if (m.basket > b) html += card('<b>המלצה:</b> הסל חורג מהתקצי�
 html += card('<b>חלוקה לפי מבקש:</b><br>' + (Object.keys(byP).map(p => `${esc(p)}: ${byP[p]} ₪`).join('<br>') || 'אין נתונים'));
 const last = (s.purchases || []).slice(-5).reverse();
 html += card('<b>חשבוניות אחרונות:</b><br>' + (last.map(p => `${fmtTime(p.ts)} – ${p.store ? esc(p.store) + ' – ' : ''}${esc(p.by)}: ${p.total} ₪`).join('<br>') || 'עדיין לא נסרקו חשבוניות'));
+html += '<button onclick="openReceipts()" class="w-full py-3 rounded-xl bg-gray-700 border border-gray-600 text-white font-bold">🧾 כל החשבוניות והתמונות</button>';
 html += '<button onclick="openCompare()" class="w-full py-3 rounded-xl bg-gray-700 border border-gray-600 text-white font-bold">📊 השוואת חנויות</button>';
 html += '<button onclick="openReceipt()" class="w-full py-3 rounded-xl bg-indigo-600 text-white font-bold">🧾 סרוק חשבונית</button>';
 openPanel('💰 תקציב וניתוח', html);
@@ -380,11 +356,30 @@ function setBudget() {
 const v = Number(prompt('תקציב שבועי (₪):', window.appState.budget || 1000));
 if (v > 0) { window.mutateDoc(d => { d.budget = v; }, { type: 'budgetset', text: `${window.appState.currentUser} עדכן/ה תקציב שבועי ל-${v} ₪` }); openBudget(); }
 }
-function openReceipt() {
-openPanel('🧾 סריקת חשבונית', '<div class="flex gap-2"><label class="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold text-center cursor-pointer">📷 צלם<input type="file" accept="image/*" capture="environment" class="hidden" onchange="scanReceipt(this.files[0])"></label><label class="flex-1 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white font-bold text-center cursor-pointer">🖼️ מהגלריה<input type="file" accept="image/*" class="hidden" onchange="scanReceipt(this.files[0])"></label></div><div class="text-xs text-gray-400">הזיהוי מתבצע בטלפון והתמונה לא נשלחת לשום מקום. המוצרים שיזוהו יתווספו לרשימה הכללית עם מחיר החנות.</div><div id="rcpt-status" class="text-sm text-amber-200"></div><div id="rcpt-result"></div>');
-showReceiptResult('');
-}
+let rs = { imgs: [], totals: [], q: Promise.resolve(), touched: false, n: 0, done: 0 };
+let tessWorker = null;
+const imgCache = {};
 function rcptStatus(t) { const e = document.getElementById('rcpt-status'); if (e) e.textContent = t; }
+function rcptErr(t) { const e = document.getElementById('rcpt-err'); if (e) e.textContent = t; window.showToast(t); }
+function openReceipt() {
+rs = { imgs: [], totals: [], q: Promise.resolve(), touched: false, n: 0, done: 0 };
+const cur = localStorage.getItem('shmuel_store') || '';
+openPanel('🧾 סריקת חשבונית', `<div class="flex gap-2"><label class="flex-1 py-3 rounded-xl bg-indigo-600 text-white font-bold text-center cursor-pointer">📷 צלם<input type="file" accept="image/*" capture="environment" class="hidden" onchange="addImages(this.files, this)"></label><label class="flex-1 py-3 rounded-xl bg-gray-700 border border-gray-600 text-white font-bold text-center cursor-pointer">🖼️ מהגלריה (כמה תמונות)<input type="file" accept="image/*" multiple class="hidden" onchange="addImages(this.files, this)"></label></div>
+<div class="text-xs text-gray-400">אפשר להוסיף כמה תמונות לאותה קנייה: בגלריה סמן כמה תמונות יחד, ובמצלמה לחץ שוב על 📷 אחרי כל צילום. התמונות נשמרות לצפייה בהמשך, והזיהוי מתבצע בטלפון.</div>
+<div id="rs-thumbs" class="flex gap-1.5 overflow-x-auto"></div>
+<div id="rcpt-status" class="text-sm text-amber-200"></div>
+<div class="text-sm text-gray-300">באיזו חנות קנית?</div>
+<div class="flex gap-2"><select id="rcpt-store" data-empty="בחר חנות..." onchange="localStorage.setItem('shmuel_store', this.value)" class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white">${storeOptions(cur, 'בחר חנות...')}</select><button onclick="addStore('rcpt-store')" class="px-4 rounded-lg bg-gray-700 border border-gray-600" title="חנות חדשה">➕</button></div>
+<div><label class="text-sm text-gray-300">סכום החשבונית (₪) – מתעדכן אוטומטית, אפשר לתקן:</label><input id="rcpt-total" type="number" step="0.01" oninput="rs.touched = true" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white mt-1"></div>
+<div id="rl-info" class="text-xs text-gray-300"></div>
+<div class="text-sm text-gray-300">מוצרים שזוהו – תקן שם או מחיר, וסמן מה לשמור:</div>
+<div id="rl-rows"></div>
+<button onclick="addManualRow()" class="w-full py-2 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm">➕ הוסף שורה ידנית</button>
+<div id="rcpt-err" class="text-sm text-red-300"></div>
+<button onclick="saveReceipt()" class="w-full py-3 rounded-xl bg-green-600 text-white font-bold">שמור חשבונית והוסף לרשימה</button>
+<details class="text-xs text-gray-400"><summary>הטקסט שזוהה</summary><pre id="rs-raw" class="whitespace-pre-wrap"></pre></details>`);
+rlRecalc();
+}
 function loadTess() {
 return new Promise((res, rej) => {
 if (window.Tesseract) return res();
@@ -394,38 +389,88 @@ sc.onload = res; sc.onerror = () => rej(new Error('load'));
 document.head.appendChild(sc);
 });
 }
-function prepImage(file) {
+async function getWorker() {
+await loadTess();
+if (!tessWorker) tessWorker = await Tesseract.createWorker('heb+eng', 1, { logger: m => { if (m.status === 'recognizing text') rcptStatus('מזהה תמונה ' + (rs.done + 1) + ' מתוך ' + rs.n + '... ' + Math.round((m.progress || 0) * 100) + '%'); else if (m.status) rcptStatus('טוען מנוע זיהוי (בפעם הראשונה לוקח כדקה)...'); } });
+return tessWorker;
+}
+function prepBoth(file) {
 return new Promise(res => {
 const img = new Image();
 img.onload = () => {
-const k = Math.min(1, 1600 / Math.max(img.width, img.height));
+const draw = max => {
+const k = Math.min(1, max / Math.max(img.width, img.height));
 const c = document.createElement('canvas');
 c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
 const x = c.getContext('2d');
 x.filter = 'grayscale(1) contrast(1.4)';
 x.drawImage(img, 0, 0, c.width, c.height);
-URL.revokeObjectURL(img.src);
-c.toBlob(b => res(b || file), 'image/png');
+return c;
 };
-img.onerror = () => res(file);
+const big = draw(1600);
+let small = draw(1200).toDataURL('image/jpeg', 0.6);
+if (small.length > 650000) small = draw(900).toDataURL('image/jpeg', 0.5);
+URL.revokeObjectURL(img.src);
+big.toBlob(b => res({ blob: b || file, data: small }), 'image/png');
+};
+img.onerror = () => res({ blob: file, data: '' });
 img.src = URL.createObjectURL(file);
 });
 }
-async function scanReceipt(file) {
-if (!file) return;
-try {
-rcptStatus('מכין תמונה...');
-const blob = await prepImage(file);
-rcptStatus('טוען מנוע זיהוי (בפעם הראשונה לוקח כדקה)...');
-await loadTess();
-const r = await Tesseract.recognize(blob, 'heb+eng', { logger: m => { if (m.status) rcptStatus('מזהה... ' + Math.round((m.progress || 0) * 100) + '%'); } });
-rcptStatus('');
-showReceiptResult(r.data.text || '');
-} catch (e) {
-console.error(e);
-rcptStatus('הזיהוי נכשל. אפשר להזין סכום ידנית.');
-showReceiptResult('');
+function addImages(fileList, input) {
+const files = [...(fileList || [])];
+if (input) input.value = '';
+files.forEach(f => { rs.n++; rs.q = rs.q.then(() => processOne(f)).catch(e => console.error(e)); });
 }
+async function processOne(file) {
+const idx = rs.imgs.length;
+rcptStatus('מכין תמונה ' + (rs.done + 1) + ' מתוך ' + rs.n + '...');
+const pb = await prepBoth(file);
+rs.imgs.push(pb.data);
+renderThumbs();
+let text = '';
+try { const w = await getWorker(); const r = await w.recognize(pb.blob); text = r.data.text || ''; }
+catch (e) { console.error(e); window.showToast('הזיהוי נכשל בתמונה ' + (idx + 1) + ' – אפשר להוסיף שורות ידנית'); }
+rs.done++;
+appendScan(text, idx);
+rcptStatus(rs.done >= rs.n ? 'הסתיים הזיהוי של ' + rs.done + ' תמונות ✓' : '');
+}
+function renderThumbs() {
+const box = document.getElementById('rs-thumbs'); if (!box) return;
+box.innerHTML = rs.imgs.map((d, i) => d ? `<img src="${d}" onclick="viewImg(rs.imgs[${i}])" class="h-14 rounded border border-gray-600">` : '').join('');
+}
+function viewImg(src) {
+if (!src) return;
+document.getElementById('img-viewer-img').src = src;
+document.getElementById('img-viewer').classList.remove('hidden');
+}
+function rowHtml(name, price, imgIdx) {
+const m = name ? matchItem(name) : null;
+return `<div class="rl-row bg-gray-900 rounded-lg p-1.5 border border-gray-700 mt-1" data-match="${m ? m.id : ''}" data-img="${imgIdx == null ? '' : imgIdx}"><div class="flex items-center gap-1.5"><input type="checkbox" onchange="rlRecalc()" class="rl-on w-5 h-5" checked><input type="text" oninput="rlRematch(this)" class="rl-name flex-1 min-w-0 p-1.5 rounded bg-gray-800 border border-gray-600 text-white text-sm" value="${attr(name)}" placeholder="שם מוצר"><input type="number" step="0.01" oninput="rlRecalc()" class="rl-price w-16 p-1.5 rounded bg-gray-800 border border-gray-600 text-white text-sm text-center" value="${price || ''}" placeholder="₪"><button onclick="this.closest('.rl-row').remove(); rlRecalc()" class="text-red-400 px-1 font-bold">✕</button></div><div class="rl-lab text-xs mt-0.5 ${m ? 'text-green-300' : 'text-amber-300'}">${m ? 'יעדכן מחיר של: ' + esc(m.name) : 'מוצר חדש – יתווסף לרשימה הכללית'}${imgIdx == null ? '' : ' • תמונה ' + (imgIdx + 1)}</div></div>`;
+}
+function appendScan(text, idx) {
+const p = parseReceipt(text);
+rs.totals[idx] = p.total || 0;
+const box = document.getElementById('rl-rows'); if (!box) return;
+box.insertAdjacentHTML('beforeend', p.items.map(l => rowHtml(l.name, l.price, idx)).join(''));
+const raw = document.getElementById('rs-raw');
+if (raw && text) raw.textContent += '\n--- תמונה ' + (idx + 1) + ' ---\n' + text;
+rlRecalc();
+}
+function addManualRow() {
+const box = document.getElementById('rl-rows'); if (!box) return;
+box.insertAdjacentHTML('beforeend', rowHtml('', '', null));
+rlRecalc();
+}
+function useSum(v) { const inp = document.getElementById('rcpt-total'); if (inp) { inp.value = v; rs.touched = true; } }
+function rlRecalc() {
+const rows = [...document.querySelectorAll('#rl-rows .rl-row')].filter(r => r.querySelector('.rl-on').checked);
+const sum = Math.round(rows.reduce((a, r) => a + (Number(r.querySelector('.rl-price').value) || 0), 0) * 100) / 100;
+const det = Math.round(rs.totals.reduce((a, b) => a + (b || 0), 0) * 100) / 100;
+const inp = document.getElementById('rcpt-total');
+if (inp && !rs.touched) inp.value = det > 0 ? det : (sum || '');
+const info = document.getElementById('rl-info');
+if (info) info.innerHTML = 'מוצרים מסומנים: <b>' + rows.length + '</b> • סכומם: <b>' + sum + ' ₪</b>' + (det > 0 ? ' • סה"כ שזוהה בחשבונית: <b>' + det + ' ₪</b>' : '') + ' <button onclick="useSum(' + sum + ')" class="underline text-green-300">השתמש בסכום המוצרים</button>';
 }
 function parseReceipt(text) {
 const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
@@ -433,17 +478,19 @@ const numRe = /(\d{1,4}[.,]\d{2})(?!\d)/g;
 const keys = /(סה"כ|סהכ|סה״כ|לתשלום|סך הכל|total)/i;
 const junk = /(מע"?מ|סה"?כ|סהכ|לתשלום|מזומן|אשראי|עודף|כרטיס|חשבונית|טלפון|תאריך|קופה|קופאי|סניף|עוסק|נקודות|מועדון|הנחה|אסמכתא|ויזה|ישראכרט|מאסטרקארד|total|subtotal|tax|vat|cash|change)/i;
 const val = m => parseFloat(m[m.length - 1].replace(',', '.'));
-let total = null; const items = []; let max = 0;
+const clean = l => l.replace(numRe, '').replace(/[^\u0590-\u05FFa-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+const ok = n => n.length >= 2 && /[\u0590-\u05FFa-zA-Z]{2,}/.test(n);
+let total = null, pending = null; const items = [];
 lines.forEach(l => {
-const m = l.match(numRe); if (!m) return;
-const v = val(m); if (v > max) max = v;
-if (keys.test(l)) { if (total === null || v > total) total = v; }
-else if (!junk.test(l)) {
-const name = l.replace(numRe, '').replace(/[^\u0590-\u05FFa-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-if (name.length >= 2 && /[\u0590-\u05FFa-zA-Z]/.test(name)) items.push({ name, price: v });
-}
+const m = l.match(numRe);
+if (!m) { const n = clean(l); pending = (ok(n) && !junk.test(l)) ? n : null; return; }
+const v = val(m);
+if (keys.test(l)) { if (total === null || v > total) total = v; pending = null; return; }
+if (junk.test(l)) { pending = null; return; }
+const n = clean(l);
+if (ok(n)) { items.push({ name: n, price: v }); pending = null; }
+else if (pending) { items.push({ name: pending, price: v }); pending = null; }
 });
-if (total === null && max > 0) total = max;
 return { total, items };
 }
 function priceKey(n) { return (n || '').trim().toLowerCase(); }
@@ -481,11 +528,11 @@ return best;
 }
 function rlRematch(inp) {
 const row = inp.closest('.rl-row'); if (!row) return;
-const m = matchItem(inp.value);
+const m = inp.value.trim() ? matchItem(inp.value) : null;
 row.setAttribute('data-match', m ? m.id : '');
-const lab = row.querySelector('.rl-lab');
+const lab = row.querySelector('.rl-lab'), im = row.getAttribute('data-img');
 lab.className = 'rl-lab text-xs mt-0.5 ' + (m ? 'text-green-300' : 'text-amber-300');
-lab.textContent = m ? 'יעדכן מחיר של: ' + m.name : 'מוצר חדש – יתווסף לרשימה הכללית';
+lab.textContent = (m ? 'יעדכן מחיר של: ' + m.name : 'מוצר חדש – יתווסף לרשימה הכללית') + (im !== null && im !== '' ? ' • תמונה ' + (Number(im) + 1) : '');
 }
 function isRcptItem(i) { return /^r\d+_\d+$/.test(i.id); }
 function findDupes() {
@@ -540,51 +587,81 @@ localStorage.setItem('shmuel_store', n);
 const sel = document.getElementById(selId);
 if (sel) sel.innerHTML = storeOptions(n, sel.getAttribute('data-empty') || '');
 }
-function showReceiptResult(text) {
-const box = document.getElementById('rcpt-result'); if (!box) return;
-const p = parseReceipt(text);
-const cur = localStorage.getItem('shmuel_store') || '';
-let html = `<div class="mt-2 text-sm text-gray-300">באיזו חנות קנית?</div><div class="flex gap-2 mt-1"><select id="rcpt-store" data-empty="בחר חנות..." onchange="localStorage.setItem('shmuel_store', this.value)" class="flex-1 p-3 rounded-lg bg-gray-900 border border-gray-600 text-white">${storeOptions(cur, 'בחר חנות...')}</select><button onclick="addStore('rcpt-store')" class="px-4 rounded-lg bg-gray-700 border border-gray-600" title="חנות חדשה">➕</button></div>`;
-html += `<div class="mt-2"><label class="text-sm text-gray-300">סכום החשבונית (₪) – אפשר לתקן:</label><input id="rcpt-total" type="number" step="0.01" value="${p.total || ''}" class="w-full p-3 rounded-lg bg-gray-900 border border-gray-600 text-white mt-1"></div>`;
-if (p.items.length) {
-html += '<div class="mt-2 text-sm text-gray-300">מוצרים שזוהו – תקן שם או מחיר, וסמן מה לשמור:</div>';
-html += p.items.map(l => { const m = matchItem(l.name); return `<div class="rl-row bg-gray-900 rounded-lg p-1.5 border border-gray-700 mt-1" data-match="${m ? m.id : ''}"><div class="flex items-center gap-1.5"><input type="checkbox" class="rl-on w-5 h-5" checked><input type="text" oninput="rlRematch(this)" class="rl-name flex-1 min-w-0 p-1.5 rounded bg-gray-800 border border-gray-600 text-white text-sm" value="${attr(l.name)}"><input type="number" step="0.01" class="rl-price w-16 p-1.5 rounded bg-gray-800 border border-gray-600 text-white text-sm text-center" value="${l.price}"></div><div class="rl-lab text-xs mt-0.5 ${m ? 'text-green-300' : 'text-amber-300'}">${m ? 'יעדכן מחיר של: ' + esc(m.name) : 'מוצר חדש – יתווסף לרשימה הכללית'}</div></div>`; }).join('');
-}
-html += '<button onclick="saveReceipt()" class="w-full mt-3 py-3 rounded-xl bg-green-600 text-white font-bold">שמור חשבונית והוסף לרשימה</button>';
-if (text) html += `<details class="mt-2 text-xs text-gray-400"><summary>הטקסט שזוהה</summary><pre class="whitespace-pre-wrap">${esc(text)}</pre></details>`;
-box.innerHTML = html;
-}
 function saveReceipt() {
-const total = Number(document.getElementById('rcpt-total').value);
-if (!(total > 0)) { window.showToast('הזן סכום תקין'); return; }
 const store = (document.getElementById('rcpt-store').value || '').trim();
-if (!store) { window.showToast('בחר חנות (או הוסף ➕) לפני השמירה'); return; }
-const rows = [...document.querySelectorAll('#rcpt-result .rl-row')].filter(r => r.querySelector('.rl-on').checked).map((r, i) => ({ i, name: r.querySelector('.rl-name').value.trim(), price: Number(r.querySelector('.rl-price').value) || 0, match: r.getAttribute('data-match') || '' })).filter(x => x.name && x.price > 0);
+const total = Number(document.getElementById('rcpt-total').value);
+if (!store) { rcptErr('בחר חנות (או הוסף ➕) לפני השמירה'); return; }
+if (!(total > 0)) { rcptErr('הזן סכום תקין לחשבונית'); return; }
+const rows = [...document.querySelectorAll('#rl-rows .rl-row')].filter(r => r.querySelector('.rl-on').checked).map((r, i) => ({ i, name: r.querySelector('.rl-name').value.trim(), price: Number(r.querySelector('.rl-price').value) || 0, match: r.getAttribute('data-match') || '' })).filter(x => x.name && x.price > 0);
 rows.forEach(x => { if (!x.match) x.cat = autoCategory(x.name) || 'אחר'; });
-const user = window.appState.currentUser, pid = Date.now().toString(), ts = Date.now();
+const now = Date.now();
+const dup = (window.appState.purchases || []).find(p => p.store === store && Math.abs(p.total - total) < 0.01 && now - p.ts < 600000);
+if (dup && !confirm('נראה שכבר שמרת חשבונית זהה (' + store + ', ' + total + ' ₪) לפני רגע. לשמור שוב?')) return;
+const user = window.appState.currentUser, pid = String(now), ts = now;
+const imgData = rs.imgs.filter(Boolean);
+const imgIds = imgData.map((d, i) => pid + '_' + i);
+let nNew = 0, nUpd = 0;
 window.mutateDoc(d => {
-d.purchases = (d.purchases || []).concat([{ id: pid, ts, by: user, total, store }]).slice(-60);
+nNew = 0; nUpd = 0;
+const rec = { id: pid, ts, by: user, total, store, n: rows.length, imgs: imgIds, l: rows.slice(0, 60).map(x => [x.name, x.price]), ch: [] };
 d.stores = d.stores || []; if (!d.stores.includes(store)) d.stores.push(store);
 d.prices = d.prices || []; d.categories = d.categories || [];
 rows.forEach(x => {
 let it = x.match ? d.items.find(z => z.id === x.match) : null;
+let created = 0, op = 0, oc = 0;
 if (!it) {
-const id = 'r' + ts + '_' + x.i;
-it = d.items.find(z => z.id === id);
-if (!it) {
-it = { id, name: x.name, price: x.price, category: x.cat || 'אחר', inWeekly: false, checked: false, qty: 1, requestedBy: user, phone: '', note: '' };
-d.items.push(it);
+it = { id: 'r' + ts + '_' + x.i, name: x.name, price: 0, category: x.cat || 'אחר', inWeekly: false, checked: false, qty: 1, requestedBy: user, phone: '', note: '' };
+d.items.push(it); created = 1;
 if (!d.categories.includes(it.category)) d.categories.push(it.category);
-}
-}
+} else { op = it.price || 0; oc = it.checked ? 1 : 0; }
 it.price = x.price;
 if (it.inWeekly) it.checked = true;
-d.prices.push({ item: priceKey(it.name), store, price: x.price, ts });
+d.prices.push({ item: priceKey(it.name), store, price: x.price, ts, pid });
+rec.ch.push([it.id, op, oc, created, x.price]);
+if (created) nNew++; else nUpd++;
 });
-d.prices = d.prices.slice(-1500);
-}, { type: 'purchase', text: `${user} סרק/ה חשבונית ב${store}: ${total} ₪ (${rows.length} מוצרים נשמרו)` });
-window.showToast('נשמרו ' + rows.length + ' מוצרים ברשימה הכללית עם מחירי ' + store);
-openBudget();
+d.prices = d.prices.slice(-1200);
+d.purchases = (d.purchases || []).concat([rec]).slice(-30);
+}, { type: 'purchase', text: `${user} סרק/ה חשבונית ב${store}: ${total} ₪ (${rows.length} מוצרים)` });
+imgIds.forEach((id, i) => { imgCache[id] = imgData[i]; window.saveImg(id, imgData[i]).catch(e => { console.error(e); window.showToast('לא ניתן לשמור את תמונה ' + (i + 1) + ' בענן'); }); });
+window.showToast('נשמרה חשבונית: ' + nUpd + ' מוצרים עודכנו, ' + nNew + ' חדשים');
+openPurchase(pid);
+}
+async function getImg(id) { if (imgCache[id]) return imgCache[id]; const d = await window.loadImg(id); if (d) imgCache[id] = d; return d; }
+function openReceipts() {
+const P = (window.appState.purchases || []).slice().reverse();
+let html = '<button onclick="openReceipt()" class="w-full py-3 rounded-xl bg-green-600 text-white font-bold">➕ סרוק חשבונית חדשה</button>';
+html += P.length ? P.map(p => `<button onclick="openPurchase('${p.id}')" class="w-full text-right bg-gray-900 rounded-lg p-3 border border-gray-700"><div class="font-bold">${esc(p.store || 'ללא חנות')} – ${p.total} ₪</div><div class="text-xs text-gray-400">${fmtTime(p.ts)} • ${esc(p.by)}${p.n ? ' • ' + p.n + ' מוצרים' : ''}${p.imgs && p.imgs.length ? ' • 📷 ' + p.imgs.length : ''}</div></button>`).join('') : '<div class="text-gray-400 text-center py-6">עדיין אין חשבוניות</div>';
+openPanel('🧾 חשבוניות', html);
+}
+async function openPurchase(id) {
+const p = (window.appState.purchases || []).find(x => x.id === id); if (!p) return;
+const lines = (p.l || []).map(x => `<div class="flex justify-between text-sm"><span>${esc(x[0])}</span><span>${x[1]} ₪</span></div>`).join('');
+const has = p.imgs && p.imgs.length;
+openPanel('🧾 ' + (p.store || 'חשבונית') + ' – ' + p.total + ' ₪', `<div class="text-xs text-gray-400">${fmtTime(p.ts)} • ${esc(p.by)}${p.n ? ' • ' + p.n + ' מוצרים' : ''}</div>` + (has ? '<div id="pimgs" class="space-y-2"><div class="text-sm text-gray-400">טוען תמונות...</div></div>' : '<div class="text-xs text-gray-500">אין תמונה שמורה לקנייה זו</div>') + (lines ? '<div class="bg-gray-900 rounded-lg p-2 border border-gray-700 space-y-0.5">' + lines + '</div>' : '') + `<button onclick="cancelPurchase('${p.id}')" class="w-full py-3 rounded-xl bg-red-800 text-white font-bold">🗑️ בטל קנייה זו</button><button onclick="openReceipts()" class="w-full py-2 rounded-xl bg-gray-700 border border-gray-600 text-white">← חזרה לרשימת החשבוניות</button>`);
+if (has) {
+let html = '';
+for (const iid of p.imgs) { const d = await getImg(iid); html += d ? `<img src="${d}" onclick="viewImg(this.src)" class="w-full rounded border border-gray-600">` : '<div class="text-xs text-gray-500">תמונה לא זמינה</div>'; }
+const box = document.getElementById('pimgs'); if (box) box.innerHTML = html;
+}
+}
+function cancelPurchase(id) {
+const p = (window.appState.purchases || []).find(x => x.id === id); if (!p) return;
+if (!confirm('לבטל את הקנייה מ' + (p.store || '') + ' (' + p.total + ' ₪)? מחירים ומוצרים שנוספו ממנה יוחזרו.')) return;
+const user = window.appState.currentUser;
+window.mutateDoc(d => {
+const pp = (d.purchases || []).find(x => x.id === id);
+((pp && pp.ch) || []).forEach(c => {
+const k = d.items.findIndex(i => i.id === c[0]); if (k < 0) return;
+if (c[3]) d.items.splice(k, 1);
+else { const it = d.items[k]; if (it.price === c[4]) it.price = c[1]; it.checked = !!c[2]; }
+});
+d.prices = (d.prices || []).filter(o => o.pid !== id);
+d.purchases = (d.purchases || []).filter(x => x.id !== id);
+}, { type: 'cancel', text: `${user} ביטל/ה קנייה מ${p.store || ''} (${p.total} ₪)` });
+(p.imgs || []).forEach(i => { delete imgCache[i]; window.delImg(i); });
+window.showToast('הקנייה בוטלה');
+openReceipts();
 }
 function openPrice(id) {
 const it = window.appState.items.find(i => i.id === id); if (!it) return;
