@@ -377,7 +377,7 @@ openPanel('🧾 סריקת חשבונית', `<div class="flex gap-2"><label clas
 <button onclick="addManualRow()" class="w-full py-2 rounded-lg bg-gray-700 border border-gray-600 text-white text-sm">➕ הוסף שורה ידנית</button>
 <div id="rcpt-err" class="text-sm text-red-300"></div>
 <button onclick="saveReceipt()" class="w-full py-3 rounded-xl bg-green-600 text-white font-bold">שמור חשבונית והוסף לרשימה</button>
-<details class="text-xs text-gray-400"><summary>הטקסט שזוהה</summary><pre id="rs-raw" class="whitespace-pre-wrap"></pre></details>`);
+<details id="rs-det" class="text-xs text-gray-400"><summary>הטקסט שזוהה</summary><pre id="rs-raw" class="whitespace-pre-wrap"></pre></details>`);
 rlRecalc();
 }
 function loadTess() {
@@ -392,24 +392,29 @@ document.head.appendChild(sc);
 async function getWorker() {
 await loadTess();
 if (!tessWorker) tessWorker = await Tesseract.createWorker('heb+eng', 1, { logger: m => { if (m.status === 'recognizing text') rcptStatus('מזהה תמונה ' + (rs.done + 1) + ' מתוך ' + rs.n + '... ' + Math.round((m.progress || 0) * 100) + '%'); else if (m.status) rcptStatus('טוען מנוע זיהוי (בפעם הראשונה לוקח כדקה)...'); } });
+await tessWorker.setParameters({ tessedit_pageseg_mode: '4' });
 return tessWorker;
 }
 function prepBoth(file) {
 return new Promise(res => {
 const img = new Image();
 img.onload = () => {
-const draw = max => {
-const k = Math.min(1, max / Math.max(img.width, img.height));
+const W = img.width, H = img.height;
+const draw = k => {
 const c = document.createElement('canvas');
-c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+c.width = Math.round(W * k); c.height = Math.round(H * k);
 const x = c.getContext('2d');
 x.filter = 'grayscale(1) contrast(1.4)';
+x.imageSmoothingQuality = 'high';
 x.drawImage(img, 0, 0, c.width, c.height);
 return c;
 };
-const big = draw(1600);
-let small = draw(1200).toDataURL('image/jpeg', 0.6);
-if (small.length > 650000) small = draw(900).toDataURL('image/jpeg', 0.5);
+let k = Math.max(0.5, Math.min(2.5, 2000 / W));
+k = Math.min(k, Math.sqrt(12e6 / (W * H)));
+if (W * k > 3200) k = 3200 / W;
+const big = draw(k);
+let small = draw(Math.min(1, 1000 / W)).toDataURL('image/jpeg', 0.55);
+if (small.length > 700000) small = draw(Math.min(1, 800 / W)).toDataURL('image/jpeg', 0.5);
 URL.revokeObjectURL(img.src);
 big.toBlob(b => res({ blob: b || file, data: small }), 'image/png');
 };
@@ -424,16 +429,22 @@ files.forEach(f => { rs.n++; rs.q = rs.q.then(() => processOne(f)).catch(e => co
 }
 async function processOne(file) {
 const idx = rs.imgs.length;
+rs.info = rs.info || [];
 rcptStatus('מכין תמונה ' + (rs.done + 1) + ' מתוך ' + rs.n + '...');
 const pb = await prepBoth(file);
 rs.imgs.push(pb.data);
 renderThumbs();
-let text = '';
+let text = '', err = '';
 try { const w = await getWorker(); const r = await w.recognize(pb.blob); text = r.data.text || ''; }
-catch (e) { console.error(e); window.showToast('הזיהוי נכשל בתמונה ' + (idx + 1) + ' – אפשר להוסיף שורות ידנית'); }
+catch (e) { console.error(e); err = (e && e.message) ? e.message : 'שגיאה'; }
 rs.done++;
-appendScan(text, idx);
-rcptStatus(rs.done >= rs.n ? 'הסתיים הזיהוי של ' + rs.done + ' תמונות ✓' : '');
+const n = appendScan(text, idx);
+rs.info[idx] = err ? 'נכשל (' + err + ')' : (n ? n + ' מוצרים' : (text.trim().length < 30 ? 'לא נקרא טקסט' : 'לא זוהו מוצרים'));
+if (err) window.showToast('הזיהוי נכשל בתמונה ' + (idx + 1) + ' – ' + err);
+if (rs.done >= rs.n) {
+rcptStatus('הסתיים: ' + rs.info.map((x, i) => 'תמונה ' + (i + 1) + ' – ' + x).join(' • '));
+if (rs.info.some(x => !/^\d/.test(x))) { const det = document.getElementById('rs-det'); if (det) det.open = true; }
+} else rcptStatus('');
 }
 function renderThumbs() {
 const box = document.getElementById('rs-thumbs'); if (!box) return;
@@ -456,6 +467,7 @@ box.insertAdjacentHTML('beforeend', p.items.map(l => rowHtml(l.name, l.price, id
 const raw = document.getElementById('rs-raw');
 if (raw && text) raw.textContent += '\n--- תמונה ' + (idx + 1) + ' ---\n' + text;
 rlRecalc();
+return p.items.length;
 }
 function addManualRow() {
 const box = document.getElementById('rl-rows'); if (!box) return;
@@ -477,19 +489,26 @@ const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
 const numRe = /(\d{1,4}[.,]\d{2})(?!\d)/g;
 const keys = /(סה"כ|סהכ|סה״כ|לתשלום|סך הכל|total)/i;
 const junk = /(מע"?מ|סה"?כ|סהכ|לתשלום|מזומן|אשראי|עודף|כרטיס|חשבונית|טלפון|תאריך|קופה|קופאי|סניף|עוסק|נקודות|מועדון|הנחה|אסמכתא|ויזה|ישראכרט|מאסטרקארד|total|subtotal|tax|vat|cash|change)/i;
-const val = m => parseFloat(m[m.length - 1].replace(',', '.'));
-const clean = l => l.replace(numRe, '').replace(/[^\u0590-\u05FFa-zA-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+const toNum = x => parseFloat(x.replace(',', '.'));
+const clean = l => l.replace(/\d+(?:[.,]\d+)?/g, ' ').replace(/[^\u0590-\u05FFa-zA-Z ]/g, ' ').split(/\s+/).filter(w => w.length > 1).join(' ');
 const ok = n => n.length >= 2 && /[\u0590-\u05FFa-zA-Z]{2,}/.test(n);
+const pickPrice = l => {
+const dec = (l.match(numRe) || []).map(toNum);
+const all = (l.match(/\d+(?:[.,]\d+)?/g) || []).map(toNum);
+const t = dec[dec.length - 1];
+for (const q of all) for (const u of dec) { if (q !== 1 && u !== t && q > 0 && Math.abs(q * u - t) <= 0.03 + 0.01 * t) return u; }
+return t;
+};
 let total = null, pending = null; const items = [];
 lines.forEach(l => {
 const m = l.match(numRe);
 if (!m) { const n = clean(l); pending = (ok(n) && !junk.test(l)) ? n : null; return; }
-const v = val(m);
+const v = toNum(m[m.length - 1]);
 if (keys.test(l)) { if (total === null || v > total) total = v; pending = null; return; }
 if (junk.test(l)) { pending = null; return; }
 const n = clean(l);
-if (ok(n)) { items.push({ name: n, price: v }); pending = null; }
-else if (pending) { items.push({ name: pending, price: v }); pending = null; }
+if (ok(n)) { items.push({ name: n, price: pickPrice(l) }); pending = null; }
+else if (pending) { items.push({ name: pending, price: pickPrice(l) }); pending = null; }
 });
 return { total, items };
 }
